@@ -1,58 +1,73 @@
-# Template for Isaac Lab Projects
-
-[![IsaacSim](https://img.shields.io/badge/IsaacSim-4.5.0-silver.svg)](https://docs.omniverse.nvidia.com/isaacsim/latest/overview.html)
-[![Isaac Lab](https://img.shields.io/badge/IsaacLab-2.1.0-silver)](https://isaac-sim.github.io/IsaacLab)
-[![Python](https://img.shields.io/badge/python-3.10-blue.svg)](https://docs.python.org/3/whatsnew/3.10.html)
-[![Linux platform](https://img.shields.io/badge/platform-linux--64-orange.svg)](https://releases.ubuntu.com/20.04/)
-[![Windows platform](https://img.shields.io/badge/platform-windows--64-orange.svg)](https://www.microsoft.com/en-us/)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://pre-commit.com/)
-[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](https://opensource.org/license/mit)
+# Unitree RL environments migration to Isaac Lab
 
 ## Overview
 
-This repository serves as a template for building projects or extensions based on Isaac Lab. It allows you to develop in an isolated environment, outside of the core Isaac Lab repository.
-
-**Key Features:**
-
-- `Isolation` Work outside the core Isaac Lab repository, ensuring that your development efforts remain self-contained.
-- `Flexibility` This template is set up to allow your code to be run as an extension in Omniverse.
-
-**Keywords:** extension, template, isaaclab
+This folder migrates Unitree RL environments to [Isaac Lab](https://github.com/isaac-sim/IsaacLab), which is verified with the latest release.
 
 ## Installation
 
-- Install Isaac Lab by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html). We recommend using the conda installation as it simplifies calling Python scripts from the terminal.
+- Install Isaac Sim and Isaac Lab
+    - We recommend using the conda installation as it simplifies calling Python scripts from the terminal.
+        ```bash
+        conda create -n env_isaaclab python=3.10
+        conda activate env_isaaclab
+        # notice the CUDA version available on your system
+        pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
+        pip install --upgrade pip
+        pip install isaaclab[isaacsim,all]==2.1.0 --extra-index-url https://pypi.nvidia.com
+        ```
+    - The installation process takes about 10 minutes. Once done, please validate the installation by:
+        ```bash
+        # note: you can pass the argument "--help" to see all arguments possible.
+        isaacsim
+        ```
 
-- Clone this repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
+    - by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html), you can also refer to the binary installation and docker deployment.
 
-```bash
-# Option 1: HTTPS
-git clone https://github.com/isaac-sim/IsaacLabExtensionTemplate.git
+- Install the Unitree RL IsaacLab standalone environments.
+    - Clone or copy this project/repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
+        ```bash
+        git clone https://github.com/unitreerobotics/unitree_rl_lab.git
+        cd unitree_rl_lab
+        ```
 
-# Option 2: SSH
-git clone git@github.com:isaac-sim/IsaacLabExtensionTemplate.git
-```
+    - Use a python interpreter that has Isaac Lab installed, install the library in editable mode using:
+        ```bash
+        conda activate env_isaaclab
+        python -m pip install -e source/unitree_rl_lab
+        ```
+- Download unitree usd files
+    - NOTE: this's a temporary solution, till USD files are added to Isaac Sim assets.
 
-- Throughout the repository, the name `ext_template` only serves as an example and we provide a script to rename all the references to it automatically:
+    - Download unitree usd files from git repo
+        ```bash
+        git clone https://github.com/sharronliu/unitree_usd.git
+        ```
 
-```bash
-# Enter the repository
-cd IsaacLabExtensionTemplate
-# Rename all occurrences of ext_template (in files/directories) to your_fancy_extension_name
-python scripts/rename_template.py your_fancy_extension_name
-```
+    - Config 'UNITREE_ASSET_ROOT_DIR' in 'source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py'.
+        ```bash
+        UNITREE_ASSET_ROOT_DIR = "</home/user/projects/unitree_usd>"
+        ```
 
-- Using a python interpreter that has Isaac Lab installed, install the library
+- Verify that the environments are correctly installed by:
 
-```bash
-python -m pip install -e source/ext_template
-```
+    - Listing the available tasks:
 
-- Verify that the extension is correctly installed by running the following command:
+        ```bash
+        python scripts/list_envs.py
+        ```
 
-```bash
-python scripts/rsl_rl/train.py --task=Template-Isaac-Velocity-Rough-Anymal-D-v0
-```
+    - Running a task:
+
+        ```bash
+        python scripts/rsl_rl/train.py --task unitree_g1_23dof_rev_1_0 --num_envs 4096 --headless --max_iterations <10000>
+        ```
+
+    - Inference with a trained agent:
+
+        ```bash
+        python scripts/rsl_rl/play.py --task unitree_g1_23dof_rev_1_0_play
+        ```
 
 ### Set up IDE (Optional)
 
@@ -64,7 +79,7 @@ If everything executes correctly, it should create a file .python.env in the `.v
 
 ### Setup as Omniverse Extension (Optional)
 
-We provide an example UI extension that will load upon enabling your extension defined in `source/ext_template/ext_template/ui_extension_example.py`.
+We provide an example UI extension that will load upon enabling your extension defined in `source/unitree_rl_lab/unitree_rl_lab/ui_extension_example.py`.
 
 To enable your extension, follow these steps:
 
@@ -177,7 +192,7 @@ In some VsCode versions, the indexing of part of the extensions is missing. In t
 ```json
 {
     "python.analysis.extraPaths": [
-        "<path-to-ext-repo>/source/ext_template"
+        "<path-to-ext-repo>/source/unitree_rl_lab"
     ]
 }
 ```
