@@ -39,10 +39,7 @@ This folder migrates Unitree RL environments to [Isaac Lab](https://github.com/i
 - Download unitree usd files
     - NOTE: this's a temporary solution, till USD files are added to Isaac Sim assets.
 
-    - Download unitree usd files from git repo
-        ```bash
-        git clone https://github.com/sharronliu/unitree_usd.git
-        ```
+    - Download unitree usd files from [here](https://nvidia-my.sharepoint.com/:f:/r/personal/sharronl_nvidia_com/Documents/workspace/unitree_usd?csf=1&web=1&e=QqC2g2), keeping folder structure
 
     - Config 'UNITREE_ASSET_ROOT_DIR' in 'source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py'.
         ```bash

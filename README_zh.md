@@ -47,10 +47,7 @@
 - 下载Unitree USD 资产文件
     - 注意：这一步骤是临时方案。将来这些资产文件可以添加至Isaac Sim资产库。
 
-    - 从github下载USD资产
-        ```bash
-        git clone https://github.com/sharronliu/unitree_usd.git 
-        ```
+    - 下载USD资产, 保持相同的目录结构: https://nvidia-my.sharepoint.com/:f:/r/personal/sharronl_nvidia_com/Documents/workspace/unitree_usd?csf=1&web=1&e=QqC2g2
 
     - 配置资产路径 'UNITREE_ASSET_ROOT_DIR'，在文件'source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py'中
         ```bash
