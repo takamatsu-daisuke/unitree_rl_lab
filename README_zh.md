@@ -73,3 +73,25 @@
         ```bash
         python scripts/rsl_rl/play.py --task unitree_g1_23dof_rev_1_0_play
         ```
+
+- Sim2Sim Mujoco 部署
+
+    - 下载示例所需文件 到depoly/example_g1 (见下 文件结构说明 部分)
+
+    - mujoco 运行示例
+
+        ```bash
+        python depoly/sim2sim.py --config_file g1_lab.yaml
+        ```
+    - 文件结构说明
+        ```bash
+        - deploy/sim2sim.py # mjc inference 主程序
+        - deploy/sim2sim_helper.py  # 实现读取isaaclab参数配置, 不同仿真环境下joint映射等
+        - deploy/g1_lab.yaml # sim2sim.py 的输入config文件
+        
+        - deploy/example_g1
+                ./2025-06-06_06-06-06 # IsaacLab训练的示例目录，需要其中的policy.pt 和 env.yaml
+                ./g1_desc #机器人描述文件， 由IsaacLab中的 G1_MINIMAL_CFG 对应的usd文件生成
+
+        ```
+        ![Sim2Sim Demo](doc/sim2sim.gif)
