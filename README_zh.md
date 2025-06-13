@@ -76,7 +76,7 @@
 
 - Sim2Sim Mujoco 部署
 
-    - 下载示例所需文件 到depoly/example_g1 (见下 文件结构说明 部分)
+    - 下载示例所需文件 到depoly/example_g1 (见下 文件结构说明 部分) : [download_link](https://nvidia-my.sharepoint.com/:f:/p/yvetted/Et75I0eg4tpMl9K5GpBgBjcBXB8lkl5NwJEvpvt54y-QhA?e=6Y0Mtq)
 
     - mujoco 运行示例
 
