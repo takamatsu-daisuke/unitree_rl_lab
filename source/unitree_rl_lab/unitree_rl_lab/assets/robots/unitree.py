@@ -24,7 +24,7 @@ UNITREE_ASSET_ROOT_DIR = "/home/sharron/workspace/views/unitree/unitree_rl_lab/r
 
 G1_23DOF_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{UNITREE_ASSET_ROOT_DIR}/g1/g1_23dof_rev_1_2.usd",
+        usd_path=f"{UNITREE_ASSET_ROOT_DIR}/g1/g1_23dof_rev_1_0.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
