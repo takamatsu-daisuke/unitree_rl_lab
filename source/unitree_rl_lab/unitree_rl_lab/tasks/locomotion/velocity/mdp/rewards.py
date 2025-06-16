@@ -21,6 +21,19 @@ from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
+def feet_swing_height(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, threshold: float, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize high steps taken by the feet.
+
+    This function penalize the agent for taking steps that are higher than a threshold. This helps ensure
+    that the robot lifts its feet off the ground and takes steps.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    contacts = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+    asset = env.scene[asset_cfg.name]
+    feet_pos = asset.data.body_pos_w[:, asset_cfg.body_ids]
+    pos_error = torch.square(feet_pos[:, :, 2] - threshold) * ~contacts
+    reward = torch.sum(pos_error, dim=(1))
+    return reward
 
 def feet_air_time(
     env: ManagerBasedRLEnv, command_name: str, sensor_cfg: SceneEntityCfg, threshold: float

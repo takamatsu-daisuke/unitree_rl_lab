@@ -33,16 +33,28 @@ class G1_23Rewards(RewardsCfg):
     )
     track_ang_vel_z_exp = RewTerm(
         func=mdp.track_ang_vel_z_world_exp,
-        weight=2.0,
+        weight=0.5,
         params={"command_name": "base_velocity", "std": 0.5},
     )
+    # penalize feet swing height
+    # for rough terrain, disabled with weight=0, refer to Isaac Lab, not tuned
+    # for flat terrain, "weight = -20" and "threshold = 0.08" from gym.
+    feet_swing_height = RewTerm(
+        func=mdp.feet_swing_height,
+        weight=0.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
+            "threshold": 0.08,
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_ankle_roll_link"),
+        },
+    )
     feet_air_time = RewTerm(
-        func=mdp.feet_air_time_positive_biped,
+        func=mdp.feet_air_time,
         weight=0.25,
         params={
             "command_name": "base_velocity",
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link"),
-            "threshold": 0.4,
+            "threshold": 0,
         },
     )
     feet_slide = RewTerm(
@@ -57,13 +69,13 @@ class G1_23Rewards(RewardsCfg):
     # Penalize ankle joint limits
     dof_pos_limits = RewTerm(
         func=mdp.joint_pos_limits,
-        weight=-1.0,
+        weight=-5.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"])},
     )
     # Penalize deviation from default of the joints that are not essential for locomotion
     joint_deviation_hip = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.1,
+        weight=-1.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"])},
     )
     # Juana: change elbow
@@ -89,6 +101,18 @@ class G1_23Rewards(RewardsCfg):
         params={"asset_cfg": SceneEntityCfg("robot", joint_names="waist_yaw_joint")},
     )
 
+    # base_height
+    # for rough terrain, disabled with weight=0, refer to Isaac Lab, not tuned
+    # for flat terrain, "weight" and "target_height" to be adjusted
+    base_height = RewTerm(
+        func=mdp.base_height_l2,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "target_height": 1,
+        },
+    )
+
 ##
 # Environment configuration
 ##
@@ -105,10 +129,15 @@ class G1_23RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/torso_link"
 
         # Randomization
-        self.events.push_robot = None
-        self.events.add_base_mass = None
-        self.events.reset_robot_joints.params["position_range"] = (1.0, 1.0)
+        #self.events.push_robot = None
+        #self.events.add_base_mass = None
+        self.events.physics_material.params["static_friction_range"] = (0.1, 1.25)
+        self.events.physics_material.params["dynamic_friction_range"] = (0.1, 1.25)
+        self.events.add_base_mass.params["asset_cfg"].body_names = ["torso_link"]
+        self.events.add_base_mass.params["mass_distribution_params"] = (0.0, 3.0)
         self.events.base_external_force_torque.params["asset_cfg"].body_names = ["torso_link"]
+        self.events.base_external_force_torque.params["force_range"] = (-1.0, 1.0)
+        self.events.base_external_force_torque.params["torque_range"] = (-1.0, 1.0)
         self.events.reset_base.params = {
             "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
             "velocity_range": {
@@ -120,6 +149,9 @@ class G1_23RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "yaw": (0.0, 0.0),
             },
         }
+        #self.events.reset_robot_joints.params["position_range"] = (1.0, 1.0)
+        self.events.push_robot.interval_range_s = (5.0, 5.0)
+        self.events.push_robot.params["velocity_range"] = {"x": (0.0, 1.5), "y": (0.0, 1.5)}
 
         # Rewards
         self.rewards.lin_vel_z_l2.weight = 0.0
@@ -175,4 +207,4 @@ class G1_23RoughEnvCfg_PLAY(G1_23RoughEnvCfg):
         # remove random pushing
         self.events.base_external_force_torque = None
         self.events.push_robot = None
-
+        self.events.add_base_mass = None
