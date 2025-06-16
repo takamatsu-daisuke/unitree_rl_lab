@@ -24,7 +24,7 @@ UNITREE_ASSET_ROOT_DIR = "/home/sharron/workspace/views/unitree/unitree_rl_lab/r
 
 G1_23DOF_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{UNITREE_ASSET_ROOT_DIR}/g1/g1_23dof_rev_1_0.usd",
+        usd_path=f"{UNITREE_ASSET_ROOT_DIR}/g1/g1_23dof_rev_1_2.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -45,13 +45,19 @@ G1_23DOF_CFG = ArticulationCfg(
         pos=(0.0, 0.0, 0.74),
         joint_pos={
             ".*_hip_pitch_joint": -0.20,
+            ".*_hip_roll_joint": 0.0,
+            ".*_hip_yaw_joint": 0.0,
             ".*_knee_joint": 0.42,
             ".*_ankle_pitch_joint": -0.23,
+            ".*_ankle_roll_joint": 0.0,
             ".*_elbow_joint": 0.87,
             "left_shoulder_roll_joint": 0.16,
             "left_shoulder_pitch_joint": 0.35,
+            "left_shoulder_yaw_joint": 0.0,
             "right_shoulder_roll_joint": -0.16,
             "right_shoulder_pitch_joint": 0.35,
+            "right_shoulder_yaw_joint": 0.0,
+            ".*_wrist_roll_joint": 0.0,
         },
         joint_vel={".*": 0.0},
     ),
@@ -68,17 +74,17 @@ G1_23DOF_CFG = ArticulationCfg(
             effort_limit=300,
             velocity_limit=100.0,
             stiffness={
-                ".*_hip_yaw_joint": 150.0,
-                ".*_hip_roll_joint": 150.0,
-                ".*_hip_pitch_joint": 200.0,
-                ".*_knee_joint": 200.0,
+                ".*_hip_yaw_joint": 100.0,
+                ".*_hip_roll_joint": 100.0,
+                ".*_hip_pitch_joint": 100.0,
+                ".*_knee_joint": 150.0,
                 "waist_yaw_joint": 200.0,
             },
             damping={
-                ".*_hip_yaw_joint": 5.0,
-                ".*_hip_roll_joint": 5.0,
-                ".*_hip_pitch_joint": 5.0,
-                ".*_knee_joint": 5.0,
+                ".*_hip_yaw_joint": 2.0,
+                ".*_hip_roll_joint": 2.0,
+                ".*_hip_pitch_joint": 2.0,
+                ".*_knee_joint": 4.0,
                 "waist_yaw_joint": 5.0,
             },
             armature={
@@ -90,7 +96,7 @@ G1_23DOF_CFG = ArticulationCfg(
         "feet": ImplicitActuatorCfg(
             effort_limit=20,
             joint_names_expr=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"],
-            stiffness=20.0,
+            stiffness=40.0,
             damping=2.0,
             armature=0.01,
         ),
@@ -105,7 +111,7 @@ G1_23DOF_CFG = ArticulationCfg(
             effort_limit=300,
             velocity_limit=100.0,
             stiffness=40.0,
-            damping=10.0,
+            damping=2.0,
             armature={
                 ".*_shoulder_.*": 0.01,
                 ".*_elbow_.*": 0.01,
