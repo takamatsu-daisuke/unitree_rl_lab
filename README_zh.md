@@ -65,13 +65,13 @@
     - 运行强化学习训练。可以通过--task参数指定机器人
 
         ```bash
-        python scripts/rsl_rl/train.py --task unitree_g1_23dof_rev_1_0 --num_envs 4096 --headless --max_iterations <10000>
+        python scripts/rsl_rl/train.py --task unitree_g1_23dof_rev_1_0_flat --num_envs 4096 --headless --max_iterations <10000>
         ```
 
     - 运行强化学习推理，验证已训练的模型
 
         ```bash
-        python scripts/rsl_rl/play.py --task unitree_g1_23dof_rev_1_0_play
+        python scripts/rsl_rl/play.py --task unitree_g1_23dof_rev_1_0_flat_play --num_envs 2
         ```
 
 - Sim2Sim Mujoco 部署

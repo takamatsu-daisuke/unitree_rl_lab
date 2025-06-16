@@ -57,13 +57,13 @@ This folder migrates Unitree RL environments to [Isaac Lab](https://github.com/i
     - Running a task:
 
         ```bash
-        python scripts/rsl_rl/train.py --task unitree_g1_23dof_rev_1_0 --num_envs 4096 --headless --max_iterations <10000>
+        python scripts/rsl_rl/train.py --task unitree_g1_23dof_rev_1_0_flat --num_envs 4096 --headless --max_iterations <10000>
         ```
 
     - Inference with a trained agent:
 
         ```bash
-        python scripts/rsl_rl/play.py --task unitree_g1_23dof_rev_1_0_play
+        python scripts/rsl_rl/play.py --task unitree_g1_23dof_rev_1_0_flat_play --num_envs 2
         ```
 
 ### Set up IDE (Optional)
