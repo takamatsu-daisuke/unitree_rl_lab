@@ -69,3 +69,5 @@ datasets
 *.obj
 
 *.mtl
+
+*.STL
