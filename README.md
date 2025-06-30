@@ -112,7 +112,7 @@ cd unitree_rl_lab/deploy/robots/g1/build
 You can use this program to control the robot directly, but make sure the on-borad control program has been closed.
 
 ```bash
-./g1_ctrl --network eth0 # eth0 is the network interface name. 
+./g1_ctrl --network eth0 # eth0 is the network interface name.
 ```
 
 ## Acknowledgements

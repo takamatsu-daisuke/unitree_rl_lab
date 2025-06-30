@@ -3,19 +3,19 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING
 
-from isaaclab.assets import Articulation, RigidObject
-from isaaclab.managers import ManagerTermBase, SceneEntityCfg
-from isaaclab.utils.math import quat_apply_inverse, yaw_quat
-from isaaclab.sensors import ContactSensor, RayCaster
 import isaaclab.utils.math as math_utils
+from isaaclab.assets import Articulation, RigidObject
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.sensors import ContactSensor
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
-    from isaaclab.managers import RewardTermCfg
 
 """
 Joint penalties.
 """
+
+
 def energy(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Penalize the energy used by the robot's joints."""
     asset: Articulation = env.scene[asset_cfg.name]
@@ -26,33 +26,32 @@ def energy(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("r
 
 
 def stand_still(
-    env: ManagerBasedRLEnv, 
-    command_name: str = "base_velocity", 
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+    env: ManagerBasedRLEnv, command_name: str = "base_velocity", asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
-    
+
     reward = torch.sum(torch.abs(asset.data.joint_pos - asset.data.default_joint_pos), dim=1)
     cmd_norm = torch.norm(env.command_manager.get_command(command_name), dim=1)
     return reward * (cmd_norm < 0.1)
+
 
 """
 Robot.
 """
 
+
 def orientation_l2(
-    env: ManagerBasedRLEnv,
-    desired_gravity: list[float],
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+    env: ManagerBasedRLEnv, desired_gravity: list[float], asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
     """Reward the agent for aligning its gravity with the desired gravity vector using L2 squared kernel."""
     # extract the used quantities (to enable type-hinting)
     asset: RigidObject = env.scene[asset_cfg.name]
 
     desired_gravity = torch.tensor(desired_gravity, device=env.device)
-    cos_dist = torch.sum(asset.data.projected_gravity_b * desired_gravity, dim=-1) # cosine distance
+    cos_dist = torch.sum(asset.data.projected_gravity_b * desired_gravity, dim=-1)  # cosine distance
     normalized = 0.5 * cos_dist + 0.5  # map from [-1, 1] to [0, 1]
     return torch.square(normalized)
+
 
 def upward(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Penalize z-axis base linear velocity using L2 squared kernel."""
@@ -61,9 +60,11 @@ def upward(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("r
     reward = torch.square(1 - asset.data.projected_gravity_b[:, 2])
     return reward
 
+
 """
 Feet rewards.
 """
+
 
 def feet_stumble(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
     # extract the used quantities (to enable type-hinting)
@@ -73,6 +74,7 @@ def feet_stumble(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Te
     # Penalize feet hitting vertical surfaces
     reward = torch.any(forces_xy > 4 * forces_z, dim=1).float()
     return reward
+
 
 def feet_height_body(
     env: ManagerBasedRLEnv,
@@ -103,6 +105,7 @@ def feet_height_body(
     reward *= torch.clamp(-env.scene["robot"].data.projected_gravity_b[:, 2], 0, 0.7) / 0.7
     return reward
 
+
 def foot_clearance_reward(
     env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, target_height: float, std: float, tanh_mult: float
 ) -> torch.Tensor:
@@ -113,20 +116,18 @@ def foot_clearance_reward(
     reward = foot_z_target_error * foot_velocity_tanh
     return torch.exp(-torch.sum(reward, dim=1) / std)
 
+
 def feet_too_near(
-    env: ManagerBasedRLEnv, 
-    threshold: float = 0.2,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+    env: ManagerBasedRLEnv, threshold: float = 0.2, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     feet_pos = asset.data.body_pos_w[:, asset_cfg.body_ids, :]
     distance = torch.norm(feet_pos[:, 0] - feet_pos[:, 1], dim=-1)
     return (threshold - distance).clamp(min=0)
 
+
 def feet_contact_without_cmd(
-    env: ManagerBasedRLEnv, 
-    sensor_cfg: SceneEntityCfg, 
-    command_name: str = "base_velocity"
+    env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, command_name: str = "base_velocity"
 ) -> torch.Tensor:
     """
     Reward for feet contact when the command is zero.
@@ -144,13 +145,14 @@ def feet_contact_without_cmd(
 Feet Gait rewards.
 """
 
+
 def feet_gait(
-    env: ManagerBasedRLEnv, 
+    env: ManagerBasedRLEnv,
     period: float,
     offset: list[float],
-    sensor_cfg: SceneEntityCfg, 
-    threhold: float = 0.5,
-    command_name = None
+    sensor_cfg: SceneEntityCfg,
+    threshold: float = 0.5,
+    command_name=None,
 ) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     is_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0
@@ -162,22 +164,21 @@ def feet_gait(
         phases.append(phase)
     leg_phase = torch.cat(phases, dim=-1)
 
-
     reward = torch.zeros(env.num_envs, dtype=torch.float, device=env.device)
     for i in range(len(sensor_cfg.body_ids)):
-        is_stance = leg_phase[:, i] < threhold
+        is_stance = leg_phase[:, i] < threshold
         reward += ~(is_stance ^ is_contact[:, i])
 
     if command_name is not None:
         cmd_norm = torch.norm(env.command_manager.get_command(command_name), dim=1)
-        reward *= (cmd_norm > 0.1)
+        reward *= cmd_norm > 0.1
     return reward
-
 
 
 """
 Other rewards.
 """
+
 
 def joint_mirror(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, mirror_joints: list[list[str]]) -> torch.Tensor:
     # extract the used quantities (to enable type-hinting)
@@ -196,4 +197,4 @@ def joint_mirror(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, mirror_joint
             dim=-1,
         )
     reward *= 1 / len(mirror_joints) if len(mirror_joints) > 0 else 0
-    return reward  
+    return reward

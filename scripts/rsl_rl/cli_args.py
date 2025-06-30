@@ -53,7 +53,7 @@ def parse_rsl_rl_cfg(task_name: str, args_cli: argparse.Namespace) -> RslRlOnPol
 
     # load the default configuration
     rslrl_cfg: RslRlOnPolicyRunnerCfg = load_cfg_from_registry(task_name, "rsl_rl_cfg_entry_point")
-    if rslrl_cfg.experiment_name is "":
+    if rslrl_cfg.experiment_name == "":
         rslrl_cfg.experiment_name = task_name.lower().replace("-", "_").removesuffix("_play")
     rslrl_cfg = update_rsl_rl_cfg(rslrl_cfg, args_cli)
     return rslrl_cfg
@@ -90,7 +90,7 @@ def update_rsl_rl_cfg(agent_cfg: RslRlOnPolicyRunnerCfg, args_cli: argparse.Name
         agent_cfg.wandb_project = args_cli.log_project_name
         agent_cfg.neptune_project = args_cli.log_project_name
 
-    if agent_cfg.experiment_name is "":
+    if agent_cfg.experiment_name == "":
         task_name = args_cli.task
         agent_cfg.experiment_name = task_name.lower().replace("-", "_").removesuffix("_play")
 

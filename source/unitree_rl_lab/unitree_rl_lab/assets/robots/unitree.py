@@ -9,17 +9,19 @@ Reference: https://github.com/unitreerobotics/unitree_ros
 """
 
 from dataclasses import MISSING
+
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ActuatorNetMLPCfg, DCMotorCfg, ImplicitActuatorCfg
+from isaaclab.actuators import ActuatorNetMLPCfg, DCMotorCfg, ImplicitActuatorCfg  # noqa: F401
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.utils import configclass
 
+
 @configclass
 class UnitreeArticulationCfg(ArticulationCfg):
-    """Configuration for Unitree articulations.
-    """
+    """Configuration for Unitree articulations."""
 
     joint_sdk_names: list[str] = None
+
 
 UNITREE_MODEL_DIR = MISSING
 
@@ -60,12 +62,14 @@ UNITREE_GO2_CFG = UnitreeArticulationCfg(
             armature=0.005,
         ),
     },
+    # fmt: off
     joint_sdk_names=[
         "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
         "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
         "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
         "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint"
     ],
+    # fmt: on
 )
 
 UNITREE_GO2W_CFG = UnitreeArticulationCfg(
@@ -117,6 +121,7 @@ UNITREE_GO2W_CFG = UnitreeArticulationCfg(
             friction=0.0,
         ),
     },
+    # fmt: off
     joint_sdk_names=[
         "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
         "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
@@ -124,6 +129,7 @@ UNITREE_GO2W_CFG = UnitreeArticulationCfg(
         "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint",
         "FR_foot_joint", "FL_foot_joint", "RR_foot_joint", "RL_foot_joint"
     ],
+    # fmt: on
 )
 
 UNITREE_H1_CFG = UnitreeArticulationCfg(
@@ -229,7 +235,7 @@ UNITREE_H1_CFG = UnitreeArticulationCfg(
             },
         ),
     },
-    joint_sdk_names = [
+    joint_sdk_names=[
         "right_hip_roll_joint",
         "right_hip_pitch_joint",
         "right_knee_joint",
@@ -277,7 +283,7 @@ UNITREE_G1_29DOF_CFG = UnitreeArticulationCfg(
             "right_hip_pitch_joint": -0.1,
             ".*_knee_joint": 0.3,
             ".*_ankle_pitch_joint": -0.2,
-            ".*_shoulder_pitch_joint": 0.3, 
+            ".*_shoulder_pitch_joint": 0.3,
             "left_shoulder_roll_joint": 0.25,
             "right_shoulder_roll_joint": -0.25,
             ".*_elbow_joint": 0.97,
@@ -346,7 +352,7 @@ UNITREE_G1_29DOF_CFG = UnitreeArticulationCfg(
             },
         ),
     },
-    joint_sdk_names = [
+    joint_sdk_names=[
         "left_hip_pitch_joint",
         "left_hip_roll_joint",
         "left_hip_yaw_joint",

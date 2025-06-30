@@ -1,5 +1,4 @@
 import math
-from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
 import isaaclab.terrains as terrain_gen
@@ -18,7 +17,6 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
-import torch
 
 from unitree_rl_lab.assets.robots.unitree import UNITREE_H1_CFG
 from unitree_rl_lab.tasks.locomotion import mdp
@@ -38,6 +36,7 @@ COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     },
 )
 
+
 @configclass
 class RobotSceneCfg(InteractiveSceneCfg):
     """Configuration for the terrain scene with a legged robot."""
@@ -45,8 +44,8 @@ class RobotSceneCfg(InteractiveSceneCfg):
     # ground terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="generator", # "plane", "generator"
-        terrain_generator=COBBLESTONE_ROAD_CFG, # None, ROUGH_TERRAINS_CFG
+        terrain_type="generator",  # "plane", "generator"
+        terrain_generator=COBBLESTONE_ROAD_CFG,  # None, ROUGH_TERRAINS_CFG
         max_init_terrain_level=COBBLESTONE_ROAD_CFG.num_rows - 1,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
@@ -83,6 +82,8 @@ class RobotSceneCfg(InteractiveSceneCfg):
             texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
         ),
     )
+
+
 @configclass
 class EventCfg:
     """Configuration for events."""
@@ -155,7 +156,6 @@ class EventCfg:
     )
 
 
-
 @configclass
 class CommandsCfg:
     """Command specifications for the MDP."""
@@ -171,14 +171,18 @@ class CommandsCfg:
             lin_vel_x=(0.0, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-0.1, 0.1)
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.0, 1.), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-1.0, 1.0)
+            lin_vel_x=(0.0, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-1.0, 1.0)
         ),
     )
+
 
 @configclass
 class ActionsCfg:
     """Action specifications for the MDP."""
-    JointPositionAction = mdp.JointPositionActionCfg(asset_name="robot", joint_names=[".*"], scale=0.25, use_default_offset=True)
+
+    JointPositionAction = mdp.JointPositionActionCfg(
+        asset_name="robot", joint_names=[".*"], scale=0.25, use_default_offset=True
+    )
 
 
 @configclass
@@ -209,6 +213,7 @@ class ObservationsCfg:
     @configclass
     class CriticCfg(ObsGroup):
         """Observations for critic group."""
+
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel, scale=0.2)
         projected_gravity = ObsTerm(func=mdp.projected_gravity)
@@ -222,23 +227,26 @@ class ObservationsCfg:
         #     params={"sensor_cfg": SceneEntityCfg("height_scanner")},
         #     clip=(-1.0, 5.0),
         # )
-    
+
         # def __post_init__(self):
         #     self.history_length = 5
-            
-    # privileged observations 
+
+    # privileged observations
     critic: CriticCfg = CriticCfg()
 
 
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
+
     # -- task
-    track_lin_vel_xy = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=1.0, 
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
+    track_lin_vel_xy = RewTerm(
+        func=mdp.track_lin_vel_xy_yaw_frame_exp,
+        weight=1.0,
+        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
     )
-    track_ang_vel_z = RewTerm(func=mdp.track_ang_vel_z_exp, weight=0.5,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
+    track_ang_vel_z = RewTerm(
+        func=mdp.track_ang_vel_z_exp, weight=0.5, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
     )
 
     alive = RewTerm(func=mdp.is_alive, weight=0.15)
@@ -251,7 +259,9 @@ class RewardsCfg:
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-5.0)
 
-    joint_deviation_arms = RewTerm(func=mdp.joint_deviation_l1, weight=-1.0,
+    joint_deviation_arms = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -264,33 +274,43 @@ class RewardsCfg:
             )
         },
     )
-    joint_deviation_torso = RewTerm(func=mdp.joint_deviation_l1, weight=-1.0,
+    joint_deviation_torso = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-1.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["torso_joint"])},
     )
-    joint_deviation_hips = RewTerm(func=mdp.joint_deviation_l1, weight=-1.0,
+    joint_deviation_hips = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-1.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint", ".*_hip_yaw_joint"])},
     )
 
     # -- robot
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.)
+    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
     base_height = RewTerm(func=mdp.base_height_l2, weight=-10, params={"target_height": 0.9})
 
     # -- feet
-    gait = RewTerm(func=mdp.feet_gait, weight=0.5,
+    gait = RewTerm(
+        func=mdp.feet_gait,
+        weight=0.5,
         params={
             "period": 0.6,
             "offset": [0.0, 0.5],
-            "threhold": 0.55,
+            "threshold": 0.55,
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle.*"),
         },
-    )   
-    feet_slide = RewTerm(func=mdp.feet_slide, weight=-0.2,
+    )
+    feet_slide = RewTerm(
+        func=mdp.feet_slide,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle.*"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle.*"),
         },
     )
-    feet_clearance = RewTerm(func=mdp.foot_clearance_reward, weight=20.,
+    feet_clearance = RewTerm(
+        func=mdp.foot_clearance_reward,
+        weight=20.0,
         params={
             "std": 0.05,
             "tanh_mult": 2.0,
@@ -298,37 +318,53 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle.*"),
         },
     )
-    feet_contact_forces = RewTerm(func=mdp.contact_forces, weight=-0.0002,
+    feet_contact_forces = RewTerm(
+        func=mdp.contact_forces,
+        weight=-0.0002,
         params={
             "threshold": 500,
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle.*"),
         },
     )
-    
+
     # -- other
-    undesired_contacts = RewTerm(func=mdp.undesired_contacts, weight=-1,
+    undesired_contacts = RewTerm(
+        func=mdp.undesired_contacts,
+        weight=-1,
         params={
             "threshold": 1,
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["(?!.*ankle.*).*"]),
         },
     )
+
+
 @configclass
 class TerminationsCfg:
     """Termination terms for the MDP."""
+
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     base_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.3})
-    base_contact = DoneTerm(func=mdp.illegal_contact,
+    base_contact = DoneTerm(
+        func=mdp.illegal_contact,
         params={
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["torso_link",]), 
-            "threshold": 1.0
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=[
+                    "torso_link",
+                ],
+            ),
+            "threshold": 1.0,
         },
     )
+
 
 @configclass
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
+
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
     command_levels_vel = CurrTerm(mdp.command_levels_vel, params={"reward_term_name": "track_lin_vel_xy"})
+
 
 @configclass
 class RobotEnvCfg(ManagerBasedRLEnvCfg):
@@ -373,6 +409,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
         else:
             if self.scene.terrain.terrain_generator is not None:
                 self.scene.terrain.terrain_generator.curriculum = False
+
 
 @configclass
 class RobotPlayEnvCfg(RobotEnvCfg):

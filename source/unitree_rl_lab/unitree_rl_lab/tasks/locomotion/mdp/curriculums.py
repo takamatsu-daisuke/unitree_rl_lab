@@ -4,16 +4,13 @@ import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from isaaclab.assets import Articulation
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.terrains import TerrainImporter
-import numpy as np
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
+
 def command_levels_vel(
     env: ManagerBasedRLEnv,
-    env_ids: Sequence[int], 
+    env_ids: Sequence[int],
     reward_term_name: str,
     command_name: str = "base_velocity",
 ) -> torch.Tensor:
@@ -29,11 +26,13 @@ def command_levels_vel(
             delta_command = torch.tensor([-0.1, 0.1], device=env.device)
             ranges.lin_vel_x = torch.clamp(
                 torch.tensor(ranges.lin_vel_x, device=env.device) + delta_command,
-                limit_ranges.lin_vel_x[0], limit_ranges.lin_vel_x[1],
+                limit_ranges.lin_vel_x[0],
+                limit_ranges.lin_vel_x[1],
             ).tolist()
             ranges.lin_vel_y = torch.clamp(
                 torch.tensor(ranges.lin_vel_y, device=env.device) + delta_command,
-                limit_ranges.lin_vel_y[0], limit_ranges.lin_vel_y[1],
+                limit_ranges.lin_vel_y[0],
+                limit_ranges.lin_vel_y[1],
             ).tolist()
 
     return torch.tensor(ranges.lin_vel_x[1], device=env.device)

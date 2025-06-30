@@ -1,12 +1,12 @@
+import numpy as np
 import os
 import yaml
+
+from isaaclab.assets import Articulation
 from isaaclab.envs import ManagerBasedRLEnv
-from isaaclab.utils.io import dump_pickle, dump_yaml
-from isaaclab.assets import Articulation, RigidObject
 from isaaclab.utils import class_to_dict
-import torch
 from isaaclab.utils.string import resolve_matching_names
-import numpy as np
+
 
 def format_value(x):
     if isinstance(x, float):
@@ -17,13 +17,14 @@ def format_value(x):
         return {k: format_value(v) for k, v in x.items()}
     else:
         return x
-    
+
+
 def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
     asset: Articulation = env.scene["robot"]
     joint_sdk_names = env.cfg.scene.robot.joint_sdk_names
     joint_ids_map, _ = resolve_matching_names(asset.data.joint_names, joint_sdk_names, preserve_order=True)
 
-    cfg = {}
+    cfg = {}  # noqa: SIM904
     cfg["joint_ids_map"] = joint_ids_map
     cfg["step_dt"] = env.cfg.sim.dt * env.cfg.decimation
     stiffness = np.zeros(len(joint_sdk_names))
@@ -34,7 +35,7 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
     cfg["damping"] = damping.tolist()
     cfg["default_joint_pos"] = asset.data.default_joint_pos[0].detach().cpu().numpy().tolist()
 
-    # --- commands --- 
+    # --- commands ---
     cfg["commands"] = {}
     cfg["commands"]["base_velocity"] = {}
     if hasattr(env.cfg.commands.base_velocity, "limit_ranges"):
@@ -45,7 +46,7 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         ranges[item_name] = list(ranges[item_name])
     cfg["commands"]["base_velocity"]["ranges"] = ranges
 
-    # --- actions --- 
+    # --- actions ---
     action_names = env.action_manager.active_terms
     action_terms = zip(action_names, env.action_manager._terms.values())
     cfg["actions"] = {}
@@ -53,12 +54,12 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         term_cfg = action_term.cfg.copy()
         if isinstance(term_cfg.scale, float):
             term_cfg.scale = [term_cfg.scale for _ in range(action_term.action_dim)]
-        else: # dict
+        else:  # dict
             term_cfg.scale = action_term._scale[0].detach().cpu().numpy().tolist()
 
         if term_cfg.clip is not None:
             term_cfg.clip = action_term._clip[0].detach().cpu().numpy().tolist()
-        
+
         if action_name in ["JointPositionAction", "JointVelocityAction"]:
             if term_cfg.use_default_offset:
                 term_cfg.offset = action_term._offset[0].detach().cpu().numpy().tolist()
@@ -69,13 +70,12 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         term_cfg = term_cfg.to_dict()
 
         for _ in ["class_type", "asset_name", "debug_vis", "preserve_order", "use_default_offset"]:
-            del term_cfg[_]  
+            del term_cfg[_]
         cfg["actions"][action_name] = term_cfg
 
         cfg["actions"][action_name]["joint_ids"] = action_term._joint_ids
 
-
-    # --- observations --- 
+    # --- observations ---
     obs_names = env.observation_manager.active_terms["policy"]
     obs_cfgs = env.observation_manager._group_obs_term_cfgs["policy"]
     obs_terms = zip(obs_names, obs_cfgs)
@@ -97,11 +97,10 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         # clean cfg
         term_cfg = term_cfg.to_dict()
         for _ in ["func", "modifiers", "noise", "flatten_history_dim"]:
-            del term_cfg[_]  
+            del term_cfg[_]
         cfg["observations"][obs_name] = term_cfg
 
-
-    # --- save config file --- 
+    # --- save config file ---
     filename = os.path.join(log_dir, "params", "deploy.yaml")
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename), exist_ok=True)
