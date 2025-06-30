@@ -38,7 +38,7 @@ Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
 
     - Config 'UNITREE_MODEL_DIR' in 'source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py'.
         ```bash
-        UNITREE_ASSET_ROOT_DIR = "</home/user/projects/unitree_usd>"
+        UNITREE_MODEL_DIR = "</home/user/projects/unitree_usd>"
         ```
 
 - Verify that the environments are correctly installed by:

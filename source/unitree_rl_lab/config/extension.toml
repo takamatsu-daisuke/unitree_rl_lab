@@ -8,7 +8,7 @@ category = "isaaclab"
 readme  = "README.md"
 
 title = "Unitree RL Lab"
-author = "Agnel Wang"
+author = "Unitree Robotics"
 maintainer = "Unitree Robotics"
 description="reinforcement learning environments for Unitree robots"
 repository = "https://github.com/unitreerobotics/unitree_rl_lab"
