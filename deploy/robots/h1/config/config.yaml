@@ -37,5 +37,4 @@ FSM:
       ]
     ]
   Velocity:
-    # policy_dir: ../../../logs/rsl_rl/unitree_h1_velocity
-    policy_dir: ../../../logs/rsl_rl/unitree_h1_velocity_gym/2025-06-29_07-25-37
+    policy_dir: ../../../logs/rsl_rl/unitree_h1_velocity

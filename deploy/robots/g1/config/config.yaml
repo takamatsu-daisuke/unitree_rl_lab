@@ -33,6 +33,4 @@ FSM:
       ]
     ]
   Velocity:
-    # policy: /home/agnel/unitree/agnel/IsaacLab/logs/rsl_rl/g1_joystick_flat/2-v0
-    # policy_dir: ../../../logs/rsl_rl/unitree_g1_29dof_velocity
     policy_dir: ../../../logs/rsl_rl/unitree_g1_29dof_velocity_gym
