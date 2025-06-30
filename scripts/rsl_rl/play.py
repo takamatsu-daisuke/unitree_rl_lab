@@ -63,7 +63,6 @@ from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 
 import unitree_rl_lab.tasks  # noqa: F401
 
-
 def main():
     """Play with RSL-RL agent."""
     # parse configuration

@@ -18,6 +18,7 @@ import pathlib
 import platform
 import re
 import sys
+import importlib.util
 
 PROJECT_DIR = pathlib.Path(__file__).parents[2]
 """Path to the the project directory."""
@@ -113,6 +114,11 @@ def overwrite_python_analysis_extra_paths(isaaclab_settings: str) -> str:
     # add the path names that are in the Isaac Lab extensions directory
     isaaclab_extensions = os.listdir(os.path.join(PROJECT_DIR, "source"))
     path_names.extend(['"${workspaceFolder}/source/' + ext + '"' for ext in isaaclab_extensions])
+
+    # add the path to the Isaac Lab package directory
+    path_names.append(f'"{os.path.dirname(os.path.dirname(importlib.util.find_spec("isaaclab").origin))}"')
+    path_names.append(f'"{os.path.dirname(os.path.dirname(importlib.util.find_spec("isaaclab_rl").origin))}"')
+    path_names.append(f'"{os.path.dirname(os.path.dirname(importlib.util.find_spec("isaaclab_tasks").origin))}"')
 
     # combine them into a single string
     path_names = ",\n\t\t".expandtabs(4).join(path_names)
