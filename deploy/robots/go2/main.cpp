@@ -59,7 +59,7 @@ int main(int argc, char** argv)
     fsm->add(new State_RLBase(FSMMode::Velocity, "Velocity"));
 
     std::cout << "Press [L2 + A] to enter FixStand mode.\n";
-    std::cout << "And then press [Start] to start controling the robot.\n";
+    std::cout << "And then press [Start] to start controlling the robot.\n";
 
     while (true)
     {
