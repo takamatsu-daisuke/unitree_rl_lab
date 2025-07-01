@@ -36,7 +36,7 @@ Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
 - Download unitree usd files
     - Download unitree usd files from [unitree_model](https://github.com/unitreerobotics/unitree_model), keeping folder structure
 
-    - Config 'UNITREE_MODEL_DIR' in 'source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py'.
+    - Config `UNITREE_MODEL_DIR` in `source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py`.
         ```bash
         UNITREE_MODEL_DIR = "</home/user/projects/unitree_usd>"
         ```
