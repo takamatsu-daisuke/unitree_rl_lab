@@ -52,14 +52,14 @@ int main(int argc, char** argv)
     fsm->add(new State_FixStand(FSMMode::FixStand));
     fsm->states.back()->registered_checks.emplace_back(
         std::make_pair(
-            [&]()->bool{ return joy.start.on_pressed; }, // Start
+            [&]()->bool{ return joy.RT.pressed && joy.X.on_pressed; }, // R2 + X
             FSMMode::Velocity
         )
     );
     fsm->add(new State_RLBase(FSMMode::Velocity, "Velocity"));
 
     std::cout << "Press [L2 + Up] to enter FixStand mode.\n";
-    std::cout << "And then press [Start] to start controlling the robot.\n";
+    std::cout << "And then press [R2 + X] to start controlling the robot.\n";
 
     while (true)
     {
