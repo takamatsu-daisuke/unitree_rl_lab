@@ -42,6 +42,8 @@ int main(int argc, char** argv)
 
     init_fsm_state();
 
+    FSMState::lowcmd->msg_.mode_machine() = 5; // 29dof
+
     // Initialize FSM
     auto & joy = FSMState::lowstate->joystick;
     auto fsm = std::make_unique<CtrlFSM>(new State_Passive(FSMMode::Passive));

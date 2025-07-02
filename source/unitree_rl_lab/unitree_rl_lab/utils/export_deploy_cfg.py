@@ -93,6 +93,8 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
             term_cfg.scale = [1.0 for _ in range(obs_dims[1])]
         if term_cfg.clip is not None:
             term_cfg.clip = list(term_cfg.clip)
+        if term_cfg.history_length == 0:
+            term_cfg.history_length = 1
 
         # clean cfg
         term_cfg = term_cfg.to_dict()

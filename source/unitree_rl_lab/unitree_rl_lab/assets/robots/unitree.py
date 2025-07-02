@@ -45,7 +45,10 @@ UNITREE_GO2_CFG = UnitreeArticulationCfg(
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.4),
         joint_pos={
-            ".*_thigh_joint": 0.8,
+            ".*R_hip_joint": -0.1,
+            ".*L_hip_joint": 0.1,
+            "F[L,R]_thigh_joint": 0.8,
+            "R[L,R]_thigh_joint": 1.0,
             ".*_calf_joint": -1.5,
         },
         joint_vel={".*": 0.0},

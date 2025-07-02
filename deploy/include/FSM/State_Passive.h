@@ -8,7 +8,18 @@
 class State_Passive : public FSMState
 {
 public:
-    State_Passive(int state) : FSMState(state, "Passive") {} 
+    State_Passive(int state) : FSMState(state, "Passive") 
+    {
+        auto motor_mode = param::config["FSM"]["Passive"]["mode"];
+        if(motor_mode.IsDefined())
+        {
+            auto values = motor_mode.as<std::vector<int>>();
+            for(int i(0); i<values.size(); ++i)
+            {
+                lowcmd->msg_.motor_cmd()[i].mode() = values[i];
+            }
+        }
+    }
 
     void enter()
     {
@@ -17,9 +28,9 @@ public:
         for(int i(0); i < nq; ++i)
         {
             auto & motor = lowcmd->msg_.motor_cmd()[i];
-            motor.mode() = 1;
             motor.kp() = 0;
             motor.kd() = kd[i];
+            motor.dq() = 0;
             motor.tau() = 0;
         }
     }
