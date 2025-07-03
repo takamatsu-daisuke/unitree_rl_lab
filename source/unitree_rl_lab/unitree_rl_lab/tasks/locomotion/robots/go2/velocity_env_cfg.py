@@ -360,7 +360,7 @@ class CurriculumCfg:
     """Curriculum terms for the MDP."""
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
-    command_levels_vel = CurrTerm(mdp.command_levels_vel, params={"reward_term_name": "track_lin_vel_xy"})
+    lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
 
 
 @configclass
