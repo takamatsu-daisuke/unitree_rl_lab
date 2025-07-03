@@ -15,7 +15,7 @@ Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
 
 | <div align="center"> Isaac Lab </div> | <div align="center">  Mujoco </div> |  <div align="center"> Physical </div> |
 |--- | --- | --- |
-| [<img src="https://oss-global-cdn.unitree.com/static/188935c3b2cd46ed8dea91e818dcb6d5_1606x1328.gif" width="240px">](https://oss-global-cdn.unitree.com/static/188935c3b2cd46ed8dea91e818dcb6d5_1606x1328.gif) | [<img src="https://oss-global-cdn.unitree.com/static/72d23887692b4dda8414bfaee9b0a94c_1606x1328.gif" width="240px">](https://oss-global-cdn.unitree.com/static/72d23887692b4dda8414bfaee9b0a94c_1606x1328.gif) | [<img src="https://oss-global-cdn.unitree.com/static/b8192bdc2f884ef6a55e1be6afe8ce53_1280x720.gif" width="240px">](https://oss-global-cdn.unitree.com/static/b8192bdc2f884ef6a55e1be6afe8ce53_1280x720.gif) |
+| [<img src="https://oss-global-cdn.unitree.com/static/d879adac250648c587d3681e90658b49_480x397.gif" width="240px">](g1_sim.gif) | [<img src="https://oss-global-cdn.unitree.com/static/3c88e045ab124c3ab9c761a99cb5e71f_480x397.gif" width="240px">](g1_mujoco.gif) | [<img src="https://oss-global-cdn.unitree.com/static/6c17c6cf52ec4e26bbfab1fbf591adb2_480x270.gif" width="240px">](g1_real.gif) |
 
 </div>
 
