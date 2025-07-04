@@ -4,7 +4,6 @@
 [![Isaac Lab](https://img.shields.io/badge/IsaacLab-2.0.0-silver)](https://isaac-sim.github.io/IsaacLab)
 [![License](https://img.shields.io/badge/license-Apache2.0-yellow.svg)](https://opensource.org/license/apache-2-0)
 
-
 ## Overview
 
 This project provides a set of reinforcement learning environments for Unitree robots, built on top of [IsaacLab](https://github.com/isaac-sim/IsaacLab).
@@ -13,9 +12,9 @@ Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
 
 <div align="center">
 
-| <div align="center"> Isaac Lab </div> | <div align="center">  Mujoco </div> |  <div align="center"> Physical </div> |
-|--- | --- | --- |
-| [<img src="https://oss-global-cdn.unitree.com/static/d879adac250648c587d3681e90658b49_480x397.gif" width="240px">](g1_sim.gif) | [<img src="https://oss-global-cdn.unitree.com/static/3c88e045ab124c3ab9c761a99cb5e71f_480x397.gif" width="240px">](g1_mujoco.gif) | [<img src="https://oss-global-cdn.unitree.com/static/6c17c6cf52ec4e26bbfab1fbf591adb2_480x270.gif" width="240px">](g1_real.gif) |
+| `<div align="center">` Isaac Lab `</div>`                                                                                   | `<div align="center">`  Mujoco `</div>`                                                                                        | `<div align="center">` Physical `</div>`                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| [`<img src="https://oss-global-cdn.unitree.com/static/d879adac250648c587d3681e90658b49_480x397.gif" width="240px">`](g1_sim.gif) | [`<img src="https://oss-global-cdn.unitree.com/static/3c88e045ab124c3ab9c761a99cb5e71f_480x397.gif" width="240px">`](g1_mujoco.gif) | [`<img src="https://oss-global-cdn.unitree.com/static/6c17c6cf52ec4e26bbfab1fbf591adb2_480x270.gif" width="240px">`](g1_real.gif) |
 
 </div>
 
@@ -23,43 +22,43 @@ Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
 
 - Install Isaac Lab by following the [installation guide](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html).
 - Install the Unitree RL IsaacLab standalone environments.
-    - Clone or copy this repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
-        ```bash
-        git clone https://github.com/unitreerobotics/unitree_rl_lab.git
-        ```
 
-    - Use a python interpreter that has Isaac Lab installed, install the library in editable mode using:
-        ```bash
-        conda activate env_isaaclab
-        python -m pip install -e source/unitree_rl_lab
-        ```
+  - Clone or copy this repository separately from the Isaac Lab installation (i.e. outside the `IsaacLab` directory):
+
+    ```bash
+    git clone https://github.com/unitreerobotics/unitree_rl_lab.git
+    ```
+  - Use a python interpreter that has Isaac Lab installed, install the library in editable mode using:
+
+    ```bash
+    conda activate env_isaaclab
+    python -m pip install -e source/unitree_rl_lab
+    ```
 - Download unitree usd files
-    - Download unitree usd files from [unitree_model](https://github.com/unitreerobotics/unitree_model), keeping folder structure
 
-    - Config `UNITREE_MODEL_DIR` in `source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py`.
-        ```bash
-        UNITREE_MODEL_DIR = "</home/user/projects/unitree_usd>"
-        ```
+  - Download unitree usd files from [unitree_model](https://github.com/unitreerobotics/unitree_model), keeping folder structure
+  - Config `UNITREE_MODEL_DIR` in `source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py`.
 
+    ```bash
+    UNITREE_MODEL_DIR = "</home/user/projects/unitree_usd>"
+    ```
 - Verify that the environments are correctly installed by:
 
-    - Listing the available tasks:
+  - Listing the available tasks:
 
-        ```bash
-        python scripts/list_envs.py
-        ```
+    ```bash
+    python scripts/list_envs.py
+    ```
+  - Running a task:
 
-    - Running a task:
+    ```bash
+    python scripts/rsl_rl/train.py --headless --task Unitree-G1-29dof-Velocity
+    ```
+  - Inference with a trained agent:
 
-        ```bash
-        python scripts/rsl_rl/train.py --headless --task Unitree-G1-29dof-Velocity
-        ```
-
-    - Inference with a trained agent:
-
-        ```bash
-        python scripts/rsl_rl/play.py --task Unitree-G1-29dof-Velocity-Play
-        ```
+    ```bash
+    python scripts/rsl_rl/play.py --task Unitree-G1-29dof-Velocity-Play
+    ```
 
 ## Deploy
 
@@ -70,7 +69,7 @@ Then deploy sim2real.
 
 ```bash
 # Install dependencies
-sudo apt install -y libyaml-cpp-dev libboost-all-dev libeigen3-dev
+sudo apt install -y libyaml-cpp-dev libboost-all-dev libeigen3-dev libspdlog-dev
 # Install unitree_sdk2
 git clone git@github.com:unitreerobotics/unitree_sdk2.git
 cd unitree_sdk2

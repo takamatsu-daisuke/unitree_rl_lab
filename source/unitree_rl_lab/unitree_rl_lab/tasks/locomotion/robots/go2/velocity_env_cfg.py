@@ -87,7 +87,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
             project_uvw=True,
             texture_scale=(0.25, 0.25),
         ),
-        debug_vis=True,
+        debug_vis=False,
     )
     # robots
     robot: ArticulationCfg = UNITREE_GO2_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
