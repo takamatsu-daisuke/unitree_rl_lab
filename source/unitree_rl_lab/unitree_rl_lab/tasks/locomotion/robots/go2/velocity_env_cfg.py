@@ -87,7 +87,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
             project_uvw=True,
             texture_scale=(0.25, 0.25),
         ),
-        debug_vis=True,
+        debug_vis=False,
     )
     # robots
     robot: ArticulationCfg = UNITREE_GO2_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
@@ -323,14 +323,14 @@ class RewardsCfg:
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
         },
     )
-    feet_contact_forces = RewTerm(
-        func=mdp.contact_forces,
-        weight=-0.02,
-        params={
-            "threshold": 100.0,
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-        },
-    )
+    # feet_contact_forces = RewTerm(
+    #     func=mdp.contact_forces,
+    #     weight=-0.02,
+    #     params={
+    #         "threshold": 100.0,
+    #         "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+    #     },
+    # )
 
     # -- other
     undesired_contacts = RewTerm(
