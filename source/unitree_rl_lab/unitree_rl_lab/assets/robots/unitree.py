@@ -11,7 +11,7 @@ Reference: https://github.com/unitreerobotics/unitree_ros
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ActuatorNetMLPCfg, DCMotorCfg, ImplicitActuatorCfg  # noqa: F401
+from isaaclab.actuators import DCMotorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.utils import configclass
 
@@ -55,14 +55,14 @@ UNITREE_GO2_CFG = UnitreeArticulationCfg(
     ),
     soft_joint_pos_limit_factor=0.9,
     actuators={
-        "legs": ImplicitActuatorCfg(
-            joint_names_expr=[".*_hip_joint", ".*_thigh_joint", ".*_calf_joint"],
-            effort_limit_sim=23.5,
-            velocity_limit_sim=30.0,
+        "GO2HV": DCMotorCfg(
+            joint_names_expr=[".*"],
+            effort_limit=23.5,
+            saturation_effort=23.5,
+            velocity_limit=30.0,
             stiffness=25.0,
             damping=0.5,
             friction=0.01,
-            armature=0.005,
         ),
     },
     # fmt: off
@@ -106,22 +106,19 @@ UNITREE_GO2W_CFG = UnitreeArticulationCfg(
     ),
     soft_joint_pos_limit_factor=0.9,
     actuators={
-        "legs": ImplicitActuatorCfg(
-            joint_names_expr=[".*_hip_joint", ".*_thigh_joint", ".*_calf_joint"],
-            effort_limit_sim=23.5,
-            velocity_limit_sim=30.0,
-            stiffness=25.0,
+        "GO2HV": DCMotorCfg(
+            joint_names_expr=[".*"],
+            effort_limit=23.5,
+            saturation_effort=23.5,
+            velocity_limit=30.0,
+            stiffness={
+                ".*_hip_.*": 25.0,
+                ".*_thigh_.*": 25.0,
+                ".*_calf_.*": 25.0,
+                ".*_foot_.*": 0,
+            },
             damping=0.5,
             friction=0.01,
-            armature=0.005,
-        ),
-        "wheels": ImplicitActuatorCfg(
-            joint_names_expr=[".*_foot_joint"],
-            effort_limit_sim=23.7,
-            velocity_limit_sim=30.1,
-            stiffness=0.0,
-            damping=0.5,
-            friction=0.0,
         ),
     },
     # fmt: off
@@ -165,77 +162,50 @@ UNITREE_H1_CFG = UnitreeArticulationCfg(
     ),
     soft_joint_pos_limit_factor=0.9,
     actuators={
-        "legs": ImplicitActuatorCfg(
-            joint_names_expr=[
-                ".*_hip_yaw_joint",
-                ".*_hip_roll_joint",
-                ".*_hip_pitch_joint",
-                ".*_knee_joint",
-                "torso_joint",
-            ],
-            effort_limit_sim={
-                ".*_hip_yaw_joint": 200.0,
-                ".*_hip_roll_joint": 200.0,
-                ".*_hip_pitch_joint": 200.0,
-                ".*_knee_joint": 300.0,
-                "torso_joint": 200.0,
-            },
-            velocity_limit_sim={
-                ".*_hip_yaw_joint": 23.0,
-                ".*_hip_roll_joint": 23.0,
-                ".*_hip_pitch_joint": 23.0,
-                ".*_knee_joint": 14.0,
-                "torso_joint": 23.0,
-            },
+        "GO2HV-1": DCMotorCfg(
+            joint_names_expr=[".*ankle.*", ".*_shoulder_pitch_.*", ".*_shoulder_roll_.*"],
+            effort_limit=40,
+            saturation_effort=40,
+            velocity_limit=9,
             stiffness={
-                ".*_hip_.*_joint": 150.0,
-                ".*_knee_joint": 200.0,
+                ".*ankle.*": 40.0,
+                ".*_shoulder_.*": 100.0,
+            },
+            damping=2.0,
+            armature=0.01,
+        ),
+        "GO2HV-2": DCMotorCfg(
+            joint_names_expr=[".*_shoulder_yaw_.*", ".*_elbow_.*"],
+            effort_limit=18,
+            saturation_effort=18,
+            velocity_limit=20,
+            stiffness=50,
+            damping=2.0,
+            armature=0.01,
+        ),
+        "M107-24-1": DCMotorCfg(
+            joint_names_expr=[".*_knee_.*"],
+            effort_limit=300.0,
+            saturation_effort=300.0,
+            velocity_limit=14.0,
+            stiffness=200.0,
+            damping=4.0,
+            armature=0.01,
+        ),
+        "M107-24-2": DCMotorCfg(
+            joint_names_expr=[".*_hip_.*", "torso_joint"],
+            effort_limit=200,
+            saturation_effort=200,
+            velocity_limit=23.0,
+            stiffness={
+                ".*_hip_.*": 150.0,
                 "torso_joint": 300.0,
             },
             damping={
-                ".*_hip_.*_joint": 2.0,
-                ".*_knee_joint": 4.0,
+                ".*_hip_.*": 2.0,
                 "torso_joint": 6.0,
             },
-        ),
-        "feet": ImplicitActuatorCfg(
-            joint_names_expr=[".*_ankle_joint"],
-            effort_limit_sim=40.0,
-            velocity_limit_sim=9.0,
-            stiffness=40.0,
-            damping=2.0,
-        ),
-        "arms": ImplicitActuatorCfg(
-            joint_names_expr=[
-                ".*_shoulder_pitch_joint",
-                ".*_shoulder_roll_joint",
-                ".*_shoulder_yaw_joint",
-                ".*_elbow_joint",
-            ],
-            effort_limit_sim={
-                ".*_shoulder_pitch_joint": 40.0,
-                ".*_shoulder_roll_joint": 40.0,
-                ".*_shoulder_yaw_joint": 18.0,
-                ".*_elbow_joint": 18.0,
-            },
-            velocity_limit_sim={
-                ".*_shoulder_pitch_joint": 9.0,
-                ".*_shoulder_roll_joint": 9.0,
-                ".*_shoulder_yaw_joint": 20.0,
-                ".*_elbow_joint": 20.0,
-            },
-            stiffness={
-                ".*_shoulder_pitch_joint": 100.0,
-                ".*_shoulder_roll_joint": 50.0,
-                ".*_shoulder_yaw_joint": 50.0,
-                ".*_elbow_joint": 50.0,
-            },
-            damping={
-                ".*_shoulder_pitch_joint": 2.0,
-                ".*_shoulder_roll_joint": 2.0,
-                ".*_shoulder_yaw_joint": 2.0,
-                ".*_elbow_joint": 2.0,
-            },
+            armature=0.01,
         ),
     },
     joint_sdk_names=[
@@ -297,62 +267,66 @@ UNITREE_G1_29DOF_CFG = UnitreeArticulationCfg(
     ),
     soft_joint_pos_limit_factor=0.9,
     actuators={
-        "legs": ImplicitActuatorCfg(
-            joint_names_expr=[
-                ".*_hip_roll_joint",
-                ".*_hip_yaw_joint",
-                ".*_hip_pitch_joint",
-                ".*_knee_joint",
-                "waist_.*_joint",
-            ],
-            effort_limit_sim=300,
-            velocity_limit_sim=100.0,
+        "N7520-14.3": DCMotorCfg(
+            joint_names_expr=[".*_hip_pitch_.*", ".*_hip_yaw_.*", "waist_yaw_joint"],
+            effort_limit=88,
+            saturation_effort=88,
+            velocity_limit=32.0,
             stiffness={
-                ".*_hip_yaw_joint": 100.0,
-                ".*_hip_roll_joint": 100.0,
-                ".*_hip_pitch_joint": 100.0,
-                ".*_knee_joint": 150.0,
-                "waist_.*_joint": 200.0,
+                ".*_hip_.*": 100.0,
+                "waist_yaw_joint": 200.0,
             },
             damping={
-                ".*_hip_yaw_joint": 2.0,
-                ".*_hip_roll_joint": 2.0,
-                ".*_hip_pitch_joint": 2.0,
-                ".*_knee_joint": 4.0,
-                "waist_.*_joint": 5.0,
+                ".*_hip_.*": 2.0,
+                "waist_yaw_joint": 5.0,
             },
-            armature={
-                ".*_hip_.*": 0.01,
-                ".*_knee_joint": 0.01,
-                "waist_.*_joint": 0.01,
-            },
-        ),
-        "feet": ImplicitActuatorCfg(
-            effort_limit_sim=20,
-            joint_names_expr=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"],
-            stiffness=40.0,
-            damping=2.0,
             armature=0.01,
         ),
-        "arms": ImplicitActuatorCfg(
+        "N7520-22.5": DCMotorCfg(
+            joint_names_expr=[".*_hip_roll_.*", ".*_knee_.*"],
+            effort_limit=139,
+            saturation_effort=139,
+            velocity_limit=20.0,
+            stiffness={
+                ".*_hip_roll_.*": 100.0,
+                ".*_knee_.*": 150.0,
+            },
+            damping={
+                ".*_hip_roll_.*": 2.0,
+                ".*_knee_.*": 4.0,
+            },
+            armature=0.01,
+        ),
+        "N5020-16": DCMotorCfg(
             joint_names_expr=[
-                ".*_shoulder_pitch_joint",
-                ".*_shoulder_roll_joint",
-                ".*_shoulder_yaw_joint",
-                ".*_elbow_joint",
-                ".*_wrist_roll_joint",
-                ".*_wrist_pitch_joint",
-                ".*_wrist_yaw_joint",
+                ".*_shoulder_.*",
+                ".*_elbow_.*",
+                ".*_wrist_roll.*",
+                ".*_ankle_.*",
+                "waist_roll_joint",
+                "waist_pitch_joint",
             ],
-            effort_limit_sim=300,
-            velocity_limit_sim=100.0,
+            effort_limit=25,
+            saturation_effort=25,
+            velocity_limit=37,
+            stiffness=40.0,
+            damping={
+                ".*_shoulder_.*": 10.0,
+                ".*_elbow_.*": 10.0,
+                ".*_wrist_roll.*": 10.0,
+                ".*_ankle_.*": 2.0,
+                "waist_.*_joint": 5.0,
+            },
+            armature=0.01,
+        ),
+        "W4010-25": DCMotorCfg(
+            joint_names_expr=[".*_wrist_pitch.*", ".*_wrist_yaw.*"],
+            effort_limit=5,
+            saturation_effort=5,
+            velocity_limit=22,
             stiffness=40.0,
             damping=10.0,
-            armature={
-                ".*_shoulder_.*": 0.01,
-                ".*_elbow_.*": 0.01,
-                ".*_wrist_.*": 0.01,
-            },
+            armature=0.01,
         ),
     },
     joint_sdk_names=[
