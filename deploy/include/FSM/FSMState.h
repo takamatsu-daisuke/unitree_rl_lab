@@ -1,10 +1,8 @@
 #pragma once
 
+#include "Types.h"
 #include "param.h"
 #include "FSM/BaseState.h"
-#include "unitree/dds_wrapper/robots/g1/g1.h"
-
-using namespace unitree::robot;
 
 class FSMState : public BaseState
 {
@@ -16,7 +14,7 @@ public:
         registered_checks.emplace_back(
             std::make_pair(
                 []()->bool{ return lowstate->joystick.LT.pressed && lowstate->joystick.B.on_pressed; },
-                1 // 1 must be Passive state
+                (int)FSMMode::Passive
             )
         );
     }
@@ -31,7 +29,6 @@ public:
         lowcmd->unlockAndPublish();
     }
 
-    static std::unique_ptr<g1::publisher::LowCmd> lowcmd;
-    static std::shared_ptr<g1::subscription::LowState> lowstate;
-    static int nq;
+    static std::unique_ptr<LowCmd_t> lowcmd;
+    static std::shared_ptr<LowState_t> lowstate;
 };

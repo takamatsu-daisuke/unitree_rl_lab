@@ -1,9 +1,10 @@
-#include "unitree/dds_wrapper/robots/go2/go2.h"
-
 #include "FSM/CtrlFSM.h"
 #include "FSM/State_Passive.h"
 #include "FSM/State_FixStand.h"
 #include "FSM/State_RLBase.h"
+
+std::unique_ptr<LowCmd_t> FSMState::lowcmd = nullptr;
+std::shared_ptr<LowState_t> FSMState::lowstate = nullptr;
 
 void init_fsm_state()
 {
@@ -15,19 +16,12 @@ void init_fsm_state()
         unitree::robot::go2::shutdown();
         // exit(0);
     }
-    FSMState::lowcmd = std::make_unique<unitree::robot::g1::publisher::LowCmd>();
-    FSMState::lowstate = std::make_shared<unitree::robot::g1::subscription::LowState>();
+    FSMState::lowcmd = std::make_unique<LowCmd_t>();
+    FSMState::lowstate = std::make_shared<LowState_t>();
     spdlog::info("Waiting for connection to robot...");
     FSMState::lowstate->wait_for_connection();
     spdlog::info("Connected to robot.");
 }
-
-enum FSMMode
-{
-    Passive = 1,
-    FixStand = 2,
-    Velocity = 3,
-};
 
 int main(int argc, char** argv)
 {
@@ -43,7 +37,7 @@ int main(int argc, char** argv)
     init_fsm_state();
 
     FSMState::lowcmd->msg_.mode_machine() = 5; // 29dof
-
+    
     // Initialize FSM
     auto & joy = FSMState::lowstate->joystick;
     auto fsm = std::make_unique<CtrlFSM>(new State_Passive(FSMMode::Passive));
