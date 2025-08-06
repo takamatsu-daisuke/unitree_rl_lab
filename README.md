@@ -80,7 +80,7 @@ mkdir build && cd build
 cmake .. -DBUILD_EXAMPLES=OFF # Install on the /usr/local directory
 sudo make install
 # Compile the robot_controller
-cd deploy/robots/g1 # or other robots
+cd deploy/robots/g1_29dof # or other robots
 mkdir build && cd build
 cmake .. && make
 ```
