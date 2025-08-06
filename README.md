@@ -60,7 +60,7 @@ Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
   - Inference with a trained agent:
 
     ```bash
-    python scripts/rsl_rl/play.py --task Unitree-G1-29dof-Velocity-Play
+    python scripts/rsl_rl/play.py --task Unitree-G1-29dof-Velocity
     ```
 
 ## Deploy
@@ -101,7 +101,7 @@ cd unitree_mujoco/simulate/build
 ```
 
 ```bash
-cd unitree_rl_lab/deploy/robots/g1/build
+cd unitree_rl_lab/deploy/robots/g1_29dof/build
 ./g1_ctrl
 # 1. press [L2 + Up] to set the robot to stand up
 # 2. Click the mujoco window, and then press 8 to make the robot feet touch the ground.

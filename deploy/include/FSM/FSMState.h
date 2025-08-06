@@ -17,6 +17,12 @@ public:
                 (int)FSMMode::Passive
             )
         );
+        registered_checks.emplace_back(
+            std::make_pair(
+                []()->bool{ return lowstate->isTimeout(); },
+                (int)FSMMode::Passive
+            )
+        );
     }
 
     void pre_run()
