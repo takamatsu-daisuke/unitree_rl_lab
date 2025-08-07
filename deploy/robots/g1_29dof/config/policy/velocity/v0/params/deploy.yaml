@@ -26,7 +26,7 @@ actions:
     offset: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.3, 0.3, -0.2,
       -0.2, 0.25, -0.25, 0.0, 0.0, 0.0, 0.0, 0.97, 0.97, 0.15, -0.15, 0.0, 0.0, 0.0,
       0.0]
-    joint_ids: !!python/object/apply:builtins.slice [null, null, null]
+    joint_ids: null
 observations:
   base_ang_vel:
     params: {}
@@ -39,6 +39,7 @@ observations:
     scale: [1.0, 1.0, 1.0]
     history_length: 5
   velocity_commands:
+  # keyboard_velocity_commands:
     params: {command_name: base_velocity}
     clip: null
     scale: [1.0, 1.0, 1.0]

@@ -3,6 +3,7 @@
 #include "Types.h"
 #include "param.h"
 #include "FSM/BaseState.h"
+#include "isaaclab/devices/keyboard/keyboard.h"
 
 class FSMState : public BaseState
 {
@@ -28,6 +29,7 @@ public:
     void pre_run()
     {
         lowstate->update();
+        if(keyboard) keyboard->update();
     }
 
     void post_run()
@@ -37,4 +39,5 @@ public:
 
     static std::unique_ptr<LowCmd_t> lowcmd;
     static std::shared_ptr<LowState_t> lowstate;
+    static std::shared_ptr<Keyboard> keyboard;
 };
