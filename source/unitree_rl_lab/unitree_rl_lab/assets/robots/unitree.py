@@ -15,6 +15,8 @@ from isaaclab.actuators import IdealPDActuatorCfg, ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.utils import configclass
 
+from unitree_rl_lab.assets.robots import unitree_actuators
+
 
 @configclass
 class UnitreeArticulationCfg(ArticulationCfg):
@@ -56,10 +58,8 @@ UNITREE_GO2_CFG = UnitreeArticulationCfg(
         joint_vel={".*": 0.0},
     ),
     actuators={
-        "GO2HV": IdealPDActuatorCfg(
+        "GO2HV": unitree_actuators.UnitreeActuatorCfg_Go2HV(
             joint_names_expr=[".*"],
-            effort_limit=23.5,
-            velocity_limit=30.0,
             stiffness=25.0,
             damping=0.5,
             friction=0.01,
