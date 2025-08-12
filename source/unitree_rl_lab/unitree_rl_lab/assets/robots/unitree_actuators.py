@@ -64,7 +64,8 @@ class UnitreeActuator(IdealPDActuator):
 
     def _compute_effort_limit(self, max_effort):
         k = -max_effort / (self._velocity_x2 - self._velocity_x1)
-        return k * (self._joint_vel.abs() - self._velocity_x1) + max_effort
+        limit = k * (self._joint_vel.abs() - self._velocity_x1) + max_effort
+        return limit.clip(min=0.0)
 
 
 @configclass
@@ -86,6 +87,14 @@ class UnitreeActuatorCfg(IdealPDActuatorCfg):
 
     Y2: float = MISSING
     """Peak Torque Test(Torque and Speed in the Opposite Direction) Unit: N*m"""
+
+
+@configclass
+class UnitreeActuatorCfg_M107_15(UnitreeActuatorCfg):
+    X1 = 14.0
+    X2 = 25.6
+    Y1 = 150.0
+    Y2 = 102.8
 
 
 @configclass
