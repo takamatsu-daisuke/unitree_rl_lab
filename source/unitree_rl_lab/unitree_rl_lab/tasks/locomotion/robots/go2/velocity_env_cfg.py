@@ -404,10 +404,6 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
             if self.scene.terrain.terrain_generator is not None:
                 self.scene.terrain.terrain_generator.curriculum = False
 
-        # custom config
-        self.scene.robot.actuators["legs"].stiffness = 40.0
-        self.scene.robot.actuators["legs"].damping = 1.0
-
 
 @configclass
 class RobotPlayEnvCfg(RobotEnvCfg):
