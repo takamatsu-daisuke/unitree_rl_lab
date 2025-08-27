@@ -93,8 +93,8 @@ class UnitreeActuatorCfg(IdealPDActuatorCfg):
 class UnitreeActuatorCfg_M107_15(UnitreeActuatorCfg):
     X1 = 14.0
     X2 = 25.6
-    Y1 = 150.0
-    Y2 = 102.8
+    Y1 = 102.8
+    Y2 = 150.0
 
 
 @configclass
