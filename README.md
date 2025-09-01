@@ -1,7 +1,7 @@
 # Unitree RL Lab
 
-[![IsaacSim](https://img.shields.io/badge/IsaacSim-4.5.0-silver.svg)](https://docs.omniverse.nvidia.com/isaacsim/latest/overview.html)
-[![Isaac Lab](https://img.shields.io/badge/IsaacLab-2.0.0-silver)](https://isaac-sim.github.io/IsaacLab)
+[![IsaacSim](https://img.shields.io/badge/IsaacSim-5.0.0-silver.svg)](https://docs.omniverse.nvidia.com/isaacsim/latest/overview.html)
+[![Isaac Lab](https://img.shields.io/badge/IsaacLab-2.2.0-silver)](https://isaac-sim.github.io/IsaacLab)
 [![License](https://img.shields.io/badge/license-Apache2.0-yellow.svg)](https://opensource.org/license/apache-2-0)
 
 ## Overview
@@ -38,6 +38,7 @@ Currently supports Unitree **Go2**, **H1** and **G1-29dof** robots.
 
   - Download unitree usd files from [unitree_model](https://huggingface.co/datasets/unitreerobotics/unitree_model/tree/main), keeping folder structure
     ```bash
+    git lfs install
     git clone https://huggingface.co/datasets/unitreerobotics/unitree_model
     ```
   - Config `UNITREE_MODEL_DIR` in `source/unitree_rl_lab/unitree_rl_lab/assets/robots/unitree.py`.
@@ -72,7 +73,7 @@ Then deploy sim2real.
 
 ```bash
 # Install dependencies
-sudo apt install -y libyaml-cpp-dev libboost-all-dev libeigen3-dev libspdlog-dev
+sudo apt install -y libyaml-cpp-dev libboost-all-dev libeigen3-dev libspdlog-dev libfmt-dev
 # Install unitree_sdk2
 git clone git@github.com:unitreerobotics/unitree_sdk2.git
 cd unitree_sdk2
@@ -98,6 +99,7 @@ Installing the [unitree_mujoco](https://github.com/unitreerobotics/unitree_mujoc
 # start simulation
 cd unitree_mujoco/simulate/build
 ./unitree_mujoco
+# ./unitree_mujoco -i 0 -n eth0 -r g1 -s scene_29dof.xml # alternative
 ```
 
 ```bash
