@@ -13,7 +13,7 @@ def parse_env_cfg(
 
     Args:
         task_name: The name of the environment.
-        device: The device to run the simulation on. Defaults to "cuda:0".
+        device: The device to run the simulation on. Defaults to "cpu".
         num_envs: Number of environments to create. Defaults to None, in which case it is left unchanged.
         use_fabric: Whether to enable/disable fabric interface. If false, all read/write operations go through USD.
             This slows down the simulation but allows seeing the changes in the USD through the USD stage.

@@ -1,0 +1,879 @@
+% robot name
+[robot]
+name : g1_29dof_rev_1_0
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% links
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% 0:pelvis
+[link]
+name: pelvis
+jointtype: free
+mass: 3.813
+inertia: 
+{
+ 0.0326019, 0, 2.1e-06,
+ 0, 0.0313618, 0,
+ 2.1e-06, 0, 0.0079184 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0, 0, -0.07605 }
+import: pelvis.STL
+parent: none
+
+% 1:pelvis_contour_link
+[link]
+name: pelvis_contour_link
+jointtype: fix
+mass: 0.001
+inertia: 
+{
+ 1e-07, 0, 0,
+ 0, 1e-07, 0,
+ 0, 0, 1e-07 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0, 0, 0 }
+import: pelvis_contour_link.STL
+parent: pelvis
+
+% 2:left_hip_pitch_link
+[link]
+name: left_hip_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  165
+min: -144.998
+mass: 1.35
+inertia: 
+{
+ 0.00581119, -0.000140043, 6.20311e-05,
+ -0.000140043, 0.00234626, 0.00185234,
+ 6.20311e-05, 0.00185234, 0.00437472 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0.064452
+ 0, 0, 1, -0.1027
+}
+COG: { 0.002741, 0.047791, -0.02606 }
+import: left_hip_pitch_link.STL
+parent: pelvis
+
+% 3:right_hip_pitch_link
+[link]
+name: right_hip_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  165
+min: -144.998
+mass: 1.35
+inertia: 
+{
+ 0.00581119, 0.000140043, 6.20311e-05,
+ 0.000140043, 0.00234626, -0.00185234,
+ 6.20311e-05, -0.00185234, 0.00437472 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, -0.064452
+ 0, 0, 1, -0.1027
+}
+COG: { 0.002741, -0.047791, -0.02606 }
+import: right_hip_pitch_link.STL
+parent: pelvis
+
+% 4:waist_yaw_link
+[link]
+name: waist_yaw_link
+jointtype: revolute
+axis: { 0, 0, 1 }
+max:  150
+min: -150
+mass: 0.214
+inertia: 
+{
+ 0.00017634, 2.52878e-06, -2.11153e-05,
+ 2.52878e-06, 0.000176431, -1.10021e-06,
+ -2.11153e-05, -1.10021e-06, 0.000165124 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0.003494, 0.000233, 0.018034 }
+import: waist_yaw_link_rev_1_0.STL
+parent: pelvis
+
+% 5:imu_in_pelvis
+[link]
+name: imu_in_pelvis
+jointtype: fix
+mass: 0
+inertia: 
+{
+ 0, 0, 0,
+ 0, 0, 0,
+ 0, 0, 0 }
+frame: 
+{
+ 1, 0, 0, 0.04525
+ 0, 1, 0, 0
+ 0, 0, 1, -0.08339
+}
+COG: { 0, 0, 0 }
+parent: pelvis
+
+% 6:left_hip_roll_link
+[link]
+name: left_hip_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  170.002
+min: -30.0001
+mass: 1.52
+inertia: 
+{
+ 0.0141322, 4.35534e-05, 0.00359386,
+ 4.35534e-05, 0.0155164, -0.000121274,
+ 0.00359386, -0.000121274, 0.00301207 }
+frame: 
+{
+ 0.984744, 0, -0.17401, 0
+ 0, 1, 0, 0.052
+ 0.17401, 0, 0.984744, -0.030465
+}
+COG: { 0.029812, -0.001045, -0.087934 }
+import: left_hip_roll_link.STL
+parent: left_hip_pitch_link
+
+% 7:right_hip_roll_link
+[link]
+name: right_hip_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  30.0001
+min: -170.002
+mass: 1.52
+inertia: 
+{
+ 0.0141322, -4.35534e-05, 0.00359386,
+ -4.35534e-05, 0.0155164, 0.000121274,
+ 0.00359386, 0.000121274, 0.00301207 }
+frame: 
+{
+ 0.984744, 0, -0.17401, 0
+ 0, 1, 0, -0.052
+ 0.17401, 0, 0.984744, -0.030465
+}
+COG: { 0.029812, 0.001045, -0.087934 }
+import: right_hip_roll_link.STL
+parent: right_hip_pitch_link
+
+% 8:waist_roll_link
+[link]
+name: waist_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  29.7938
+min: -29.7938
+mass: 0.086
+inertia: 
+{
+ 7.07905e-06, 0, 0,
+ 0, 6.339e-06, 0,
+ 0, 0, 8.24505e-06 }
+frame: 
+{
+ 1, 0, 0, -0.0039635
+ 0, 1, 0, 0
+ 0, 0, 1, 0.044
+}
+COG: { 0, 2.3e-05, 0 }
+import: waist_roll_link_rev_1_0.STL
+parent: waist_yaw_link
+
+% 9:left_hip_yaw_link
+[link]
+name: left_hip_yaw_link
+jointtype: revolute
+axis: { 0, 0, 1 }
+max:  157.999
+min: -157.999
+mass: 1.702
+inertia: 
+{
+ 0.0446769, -0.00161966, -0.0172045,
+ -0.00161966, 0.0519749, -0.00352523,
+ -0.0172045, -0.00352523, 0.00902245 }
+frame: 
+{
+ 1, 0, 0, 0.025001
+ 0, 1, 0, 0
+ 0, 0, 1, -0.12412
+}
+COG: { -0.057709, -0.010981, -0.15078 }
+import: left_hip_yaw_link.STL
+parent: left_hip_roll_link
+
+% 10:right_hip_yaw_link
+[link]
+name: right_hip_yaw_link
+jointtype: revolute
+axis: { 0, 0, 1 }
+max:  157.999
+min: -157.999
+mass: 1.702
+inertia: 
+{
+ 0.0446769, 0.00161966, -0.0172045,
+ 0.00161966, 0.0519749, 0.00352523,
+ -0.0172045, 0.00352523, 0.00902245 }
+frame: 
+{
+ 1, 0, 0, 0.025001
+ 0, 1, 0, 0
+ 0, 0, 1, -0.12412
+}
+COG: { -0.057709, 0.010981, -0.15078 }
+import: right_hip_yaw_link.STL
+parent: right_hip_roll_link
+
+% 11:torso_link
+[link]
+name: torso_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  29.7938
+min: -29.7938
+mass: 6.78
+inertia: 
+{
+ 0.213273, 3.1118e-05, -0.0027235,
+ 3.1118e-05, 0.201242, -0.000376205,
+ -0.0027235, -0.000376205, 0.0256587 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0.000931, 0.000346, 0.15082 }
+import: torso_link_rev_1_0.STL
+parent: waist_roll_link
+
+% 12:left_knee_link
+[link]
+name: left_knee_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  165
+min: -5.00003
+mass: 1.932
+inertia: 
+{
+ 0.0395243, 6.40785e-06, 0.00122805,
+ 6.40785e-06, 0.0394995, 0.000210081,
+ 0.00122805, 0.000210081, 0.00160469 }
+frame: 
+{
+ 0.984744, 0, 0.17401, -0.078273
+ 0, 1, 0, 0.0021489
+ -0.17401, 0, 0.984744, -0.17734
+}
+COG: { 0.005457, 0.003964, -0.12074 }
+import: left_knee_link.STL
+parent: left_hip_yaw_link
+
+% 13:right_knee_link
+[link]
+name: right_knee_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  165
+min: -5.00003
+mass: 1.932
+inertia: 
+{
+ 0.0395243, -6.40785e-06, 0.00131785,
+ -6.40785e-06, 0.0394995, -0.000210081,
+ 0.00131785, -0.000210081, 0.00160469 }
+frame: 
+{
+ 0.984744, 0, 0.17401, -0.078273
+ 0, 1, 0, -0.0021489
+ -0.17401, 0, 0.984744, -0.17734
+}
+COG: { 0.005457, -0.003964, -0.12074 }
+import: right_knee_link.STL
+parent: right_hip_yaw_link
+
+% 14:logo_link
+[link]
+name: logo_link
+jointtype: fix
+mass: 0.001
+inertia: 
+{
+ 1e-07, 0, 0,
+ 0, 1e-07, 0,
+ 0, 0, 1e-07 }
+frame: 
+{
+ 1, 0, 0, 0.0039635
+ 0, 1, 0, 0
+ 0, 0, 1, -0.044
+}
+COG: { 0, 0, 0 }
+import: logo_link.STL
+parent: torso_link
+
+% 15:head_link
+[link]
+name: head_link
+jointtype: fix
+mass: 1.036
+inertia: 
+{
+ 0.213753, -4.17453e-06, -0.00252422,
+ -4.17453e-06, 0.213882, -0.000143079,
+ -0.00252422, -0.000143079, 0.00183674 }
+frame: 
+{
+ 1, 0, 0, 0.0039635
+ 0, 1, 0, 0
+ 0, 0, 1, -0.044
+}
+COG: { 0.005267, 0.000299, 0.449869 }
+import: head_link.STL
+parent: torso_link
+
+% 16:imu_in_torso
+[link]
+name: imu_in_torso
+jointtype: fix
+mass: 0
+inertia: 
+{
+ 0, 0, 0,
+ 0, 0, 0,
+ 0, 0, 0 }
+frame: 
+{
+ 1, 0, 0, -0.03959
+ 0, 1, 0, -0.00224
+ 0, 0, 1, 0.14792
+}
+COG: { 0, 0, 0 }
+parent: torso_link
+
+% 17:d435_link
+[link]
+name: d435_link
+jointtype: fix
+mass: 0
+inertia: 
+{
+ 0, 0, 0,
+ 0, 0, 0,
+ 0, 0, 0 }
+frame: 
+{
+ 0.674302, 0, 0.738455, 0.0576235
+ 0, 1, 0, 0.01753
+ -0.738455, 0, 0.674302, 0.42987
+}
+COG: { 0, 0, 0 }
+parent: torso_link
+
+% 18:mid360_link
+[link]
+name: mid360_link
+jointtype: fix
+mass: 0
+inertia: 
+{
+ 0, 0, 0,
+ 0, 0, 0,
+ 0, 0, 0 }
+frame: 
+{
+ 0.999194, 0, 0.0401318, 0.0002835
+ 0, 1, 0, 3e-05
+ -0.0401318, 0, 0.999194, 0.41618
+}
+COG: { 0, 0, 0 }
+parent: torso_link
+
+% 19:left_shoulder_pitch_link
+[link]
+name: left_shoulder_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  153.003
+min: -176.998
+mass: 0.718
+inertia: 
+{
+ 0.00145113, -9.2e-06, 6.4e-06,
+ -9.2e-06, 0.000550081, 0.000322259,
+ 6.4e-06, 0.000322259, 0.00134795 }
+frame: 
+{
+ 1, 0.000199314, -4.17366e-10, 0.0039563
+ -0.00019159, 0.961246, -0.275692, 0.10022
+ -5.4949e-05, 0.275692, 0.961246, 0.24778
+}
+COG: { 0, 0.035892, -0.011628 }
+import: left_shoulder_pitch_link.STL
+parent: torso_link
+
+% 20:right_shoulder_pitch_link
+[link]
+name: right_shoulder_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  153.003
+min: -176.998
+mass: 0.718
+inertia: 
+{
+ 0.00145113, 9.2e-06, 6.4e-06,
+ 9.2e-06, 0.000550081, -0.000322259,
+ 6.4e-06, -0.000322259, 0.00134795 }
+frame: 
+{
+ 1, -0.000199314, -4.17366e-10, 0.0039563
+ 0.00019159, 0.961246, 0.275692, -0.10021
+ -5.4949e-05, -0.275692, 0.961246, 0.24778
+}
+COG: { 0, -0.035892, -0.011628 }
+import: right_shoulder_pitch_link.STL
+parent: torso_link
+
+% 21:left_ankle_pitch_link
+[link]
+name: left_ankle_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  30.0001
+min: -50.0003
+mass: 0.074
+inertia: 
+{
+ 1.75784e-05, 0, 3.09066e-06,
+ 0, 3.19885e-05, 0,
+ 3.09066e-06, 0, 1.651e-05 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, -9.4445e-05
+ 0, 0, 1, -0.30001
+}
+COG: { -0.007269, 0, 0.011137 }
+import: left_ankle_pitch_link.STL
+parent: left_knee_link
+
+% 22:right_ankle_pitch_link
+[link]
+name: right_ankle_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  30.0001
+min: -50.0003
+mass: 0.074
+inertia: 
+{
+ 1.75784e-05, 0, 3.09066e-06,
+ 0, 3.19885e-05, 0,
+ 3.09066e-06, 0, 1.651e-05 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 9.4445e-05
+ 0, 0, 1, -0.30001
+}
+COG: { -0.007269, 0, 0.011137 }
+import: right_ankle_pitch_link.STL
+parent: right_knee_link
+
+% 23:left_shoulder_roll_link
+[link]
+name: left_shoulder_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  129.001
+min: -90.9972
+mass: 0.643
+inertia: 
+{
+ 0.00322348, 6.11365e-08, -5.31012e-07,
+ 6.11365e-08, 0.00326303, 0.000290336,
+ -5.31012e-07, 0.000290336, 0.000423418 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 0.961262, 0.275635, 0.038
+ 0, -0.275635, 0.961262, -0.013831
+}
+COG: { -0.000227, 0.00727, -0.063243 }
+import: left_shoulder_roll_link.STL
+parent: left_shoulder_pitch_link
+
+% 24:right_shoulder_roll_link
+[link]
+name: right_shoulder_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  90.9972
+min: -129.001
+mass: 0.643
+inertia: 
+{
+ 0.00322348, -6.11365e-08, -5.31012e-07,
+ -6.11365e-08, 0.00326303, -0.000290336,
+ -5.31012e-07, -0.000290336, 0.000423418 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 0.961262, -0.275635, -0.038
+ 0, 0.275635, 0.961262, -0.013831
+}
+COG: { -0.000227, -0.00727, -0.063243 }
+import: right_shoulder_roll_link.STL
+parent: right_shoulder_pitch_link
+
+% 25:left_ankle_roll_link
+[link]
+name: left_ankle_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  15
+min: -15
+mass: 0.608
+inertia: 
+{
+ 0.000387127, 2e-07, 0.00035379,
+ 2e-07, 0.00220726, -1e-07,
+ 0.00035379, -1e-07, 0.00209383 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0
+ 0, 0, 1, -0.017558
+}
+COG: { 0.026505, 0, -0.016425 }
+import: left_ankle_roll_link.STL
+parent: left_ankle_pitch_link
+
+% 26:right_ankle_roll_link
+[link]
+name: right_ankle_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  15
+min: -15
+mass: 0.608
+inertia: 
+{
+ 0.000387127, -2e-07, 0.00035379,
+ -2e-07, 0.00220726, 1e-07,
+ 0.00035379, 1e-07, 0.00209383 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0
+ 0, 0, 1, -0.017558
+}
+COG: { 0.026505, 0, -0.016425 }
+import: right_ankle_roll_link.STL
+parent: right_ankle_pitch_link
+
+% 27:left_shoulder_yaw_link
+[link]
+name: left_shoulder_yaw_link
+jointtype: revolute
+axis: { 0, 0, 1 }
+max:  150
+min: -150
+mass: 0.734
+inertia: 
+{
+ 0.00481119, 3.12189e-05, 0.000710603,
+ 3.12189e-05, 0.00495169, -0.000184468,
+ 0.000710603, -0.000184468, 0.00052697 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0.00624
+ 0, 0, 1, -0.1032
+}
+COG: { 0.010773, -0.002949, -0.072009 }
+import: left_shoulder_yaw_link.STL
+parent: left_shoulder_roll_link
+
+% 28:right_shoulder_yaw_link
+[link]
+name: right_shoulder_yaw_link
+jointtype: revolute
+axis: { 0, 0, 1 }
+max:  150
+min: -150
+mass: 0.734
+inertia: 
+{
+ 0.00481119, -3.12189e-05, 0.000710603,
+ -3.12189e-05, 0.00495169, 0.000184468,
+ 0.000710603, 0.000184468, 0.00052697 }
+frame: 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, -0.00624
+ 0, 0, 1, -0.1032
+}
+COG: { 0.010773, 0.002949, -0.072009 }
+import: right_shoulder_yaw_link.STL
+parent: right_shoulder_roll_link
+
+% 29:left_elbow_link
+[link]
+name: left_elbow_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  120
+min: -60.0001
+mass: 0.6
+inertia: 
+{
+ 0.000361749, -0.000108288, 0.000409352,
+ -0.000108288, 0.00300752, 2.12897e-05,
+ 0.000409352, 2.12897e-05, 0.00296317 }
+frame: 
+{
+ 1, 0, 0, 0.015783
+ 0, 1, 0, 0
+ 0, 0, 1, -0.080518
+}
+COG: { 0.064956, 0.004454, -0.010062 }
+import: left_elbow_link.STL
+parent: left_shoulder_yaw_link
+
+% 30:right_elbow_link
+[link]
+name: right_elbow_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  120
+min: -60.0001
+mass: 0.6
+inertia: 
+{
+ 0.000361749, 0.000108288, 0.000409352,
+ 0.000108288, 0.00300752, -2.12897e-05,
+ 0.000409352, -2.12897e-05, 0.00296317 }
+frame: 
+{
+ 1, 0, 0, 0.015783
+ 0, 1, 0, 0
+ 0, 0, 1, -0.080518
+}
+COG: { 0.064956, -0.004454, -0.010062 }
+import: right_elbow_link.STL
+parent: right_shoulder_yaw_link
+
+% 31:left_wrist_roll_link
+[link]
+name: left_wrist_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  113
+min: -113
+mass: 0.085445
+inertia: 
+{
+ 4.82401e-05, -5.0324e-06, 4.39039e-09,
+ -5.0324e-06, 6.23294e-05, -1.2577e-09,
+ 4.39039e-09, -1.2577e-09, 7.99461e-05 }
+frame: 
+{
+ 1, 0, 0, 0.1
+ 0, 1, 0, 0.00188791
+ 0, 0, 1, -0.01
+}
+COG: { 0.0171394, 0.000537591, 4.8864e-07 }
+import: left_wrist_roll_link.STL
+parent: left_elbow_link
+
+% 32:right_wrist_roll_link
+[link]
+name: right_wrist_roll_link
+jointtype: revolute
+axis: { 1, 0, 0 }
+max:  113
+min: -113
+mass: 0.085445
+inertia: 
+{
+ 4.82401e-05, 5.0324e-06, 4.39039e-09,
+ 5.0324e-06, 6.23294e-05, 1.2577e-09,
+ 4.39039e-09, 1.2577e-09, 7.99461e-05 }
+frame: 
+{
+ 1, 0, 0, 0.1
+ 0, 1, 0, -0.00188791
+ 0, 0, 1, -0.01
+}
+COG: { 0.0171394, -0.000537591, 4.8864e-07 }
+import: right_wrist_roll_link.STL
+parent: right_elbow_link
+
+% 33:left_wrist_pitch_link
+[link]
+name: left_wrist_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  92.5
+min: -92.5
+mass: 0.48405
+inertia: 
+{
+ 0.000167004, 1.2196e-07, 2.4748e-05,
+ 1.2196e-07, 0.000686204, 2.1054e-07,
+ 2.4748e-05, 2.1054e-07, 0.000686201 }
+frame: 
+{
+ 1, 0, 0, 0.038
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0.0229999, -0.00111685, -0.00111658 }
+import: left_wrist_pitch_link.STL
+parent: left_wrist_roll_link
+
+% 34:right_wrist_pitch_link
+[link]
+name: right_wrist_pitch_link
+jointtype: revolute
+axis: { 0, 1, 0 }
+max:  92.5
+min: -92.5
+mass: 0.48405
+inertia: 
+{
+ 0.000167004, -1.2196e-07, 2.4748e-05,
+ -1.2196e-07, 0.000686204, -2.1054e-07,
+ 2.4748e-05, -2.1054e-07, 0.000686201 }
+frame: 
+{
+ 1, 0, 0, 0.038
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0.0229999, 0.00111685, -0.00111658 }
+import: right_wrist_pitch_link.STL
+parent: right_wrist_roll_link
+
+% 35:left_wrist_yaw_link
+[link]
+name: left_wrist_yaw_link
+jointtype: revolute
+axis: { 0, 0, 1 }
+max:  92.5
+min: -92.5
+mass: 0.0845765
+inertia: 
+{
+ 4.93365e-05, -1.37828e-06, 3.45632e-06,
+ -1.37828e-06, 0.000100707, 4.0963e-07,
+ 3.45632e-06, 4.0963e-07, 8.02508e-05 }
+frame: 
+{
+ 1, 0, 0, 0.046
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0.0220038, 0.000494851, 0.000538611 }
+import: left_wrist_yaw_link.STL
+parent: left_wrist_pitch_link
+
+% 36:right_wrist_yaw_link
+[link]
+name: right_wrist_yaw_link
+jointtype: revolute
+axis: { 0, 0, 1 }
+max:  92.5
+min: -92.5
+mass: 0.0845765
+inertia: 
+{
+ 4.93365e-05, 1.37828e-06, 3.45632e-06,
+ 1.37828e-06, 0.000100707, -4.0963e-07,
+ 3.45632e-06, -4.0963e-07, 8.02508e-05 }
+frame: 
+{
+ 1, 0, 0, 0.046
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+COG: { 0.0220038, -0.000494851, 0.000538611 }
+import: right_wrist_yaw_link.STL
+parent: right_wrist_pitch_link
+
+% 37:left_rubber_hand
+[link]
+name: left_rubber_hand
+jointtype: fix
+mass: 0.17
+inertia: 
+{
+ 0.000103272, 6.31554e-05, -2.03763e-05,
+ 6.31554e-05, 0.00077079, 4.38551e-06,
+ -2.03763e-05, 4.38551e-06, 0.000709078 }
+frame: 
+{
+ 1, 0, 0, 0.0415
+ 0, 1, 0, 0.003
+ 0, 0, 1, 0
+}
+COG: { 0.0536131, -0.00295905, 0.00215413 }
+import: left_rubber_hand.STL
+parent: left_wrist_yaw_link
+
+% 38:right_rubber_hand
+[link]
+name: right_rubber_hand
+jointtype: fix
+mass: 0.17
+inertia: 
+{
+ 0.000103272, -6.31554e-05, -2.03763e-05,
+ -6.31554e-05, 0.00077079, -4.38551e-06,
+ -2.03763e-05, -4.38551e-06, 0.000709078 }
+frame: 
+{
+ 1, 0, 0, 0.0415
+ 0, 1, 0, -0.003
+ 0, 0, 1, 0
+}
+COG: { 0.0536131, 0.00295905, 0.00215413 }
+import: right_rubber_hand.STL
+parent: right_wrist_yaw_link
+
+[init]
+frame : 
+{
+ 1, 0, 0, 0
+ 0, 1, 0, 0
+ 0, 0, 1, 0
+}
+fix: noname

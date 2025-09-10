@@ -20,6 +20,8 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_29DOF_CFG as ROBOT_CFG
 from unitree_rl_lab.tasks.locomotion import mdp
+from unitree_rl_lab.tasks.locomotion.mdp.actions import JointPositionDDCActionCfg
+from unitree_rl_lab.tasks.locomotion.mdp.actions_multi import JointPositionDDCMultiActionCfg
 
 COBBLESTONE_ROAD_CFG = terrain_gen.TerrainGeneratorCfg(
     size=(8.0, 8.0),
@@ -180,8 +182,9 @@ class CommandsCfg:
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    JointPositionAction = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[".*"], scale=0.25, use_default_offset=True
+    JointPositionAction = JointPositionDDCActionCfg(
+        asset_name="robot", joint_names=[".*"], scale=0.25, use_default_offset=True,
+        asr_robot_filename="ascii/g1_29dof_rev1.asr"
     )
 
 

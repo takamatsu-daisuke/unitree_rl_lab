@@ -29,6 +29,13 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+# Force CPU-only execution regardless of other device settings
+parser.add_argument(
+    "--cpu-only",
+    action="store_true",
+    default=False,
+    help="Force CPU-only execution for simulation and agent.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -65,15 +72,20 @@ from unitree_rl_lab.utils.parser_cfg import parse_env_cfg
 
 def main():
     """Play with RSL-RL agent."""
+    import os
+    # CPU-only override via CLI flag or env var
+    force_cpu = args_cli.cpu_only or os.environ.get("UNITREE_FORCE_CPU", "").lower() in {"1", "true", "yes"}
     # parse configuration
     env_cfg = parse_env_cfg(
         args_cli.task,
-        device=args_cli.device,
+        device=("cpu" if force_cpu else args_cli.device),
         num_envs=args_cli.num_envs,
         use_fabric=not args_cli.disable_fabric,
         entry_point_key="play_env_cfg_entry_point",
     )
     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
+    if force_cpu:
+        agent_cfg.device = "cpu"
 
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
