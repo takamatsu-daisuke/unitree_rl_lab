@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from isaaclab.envs.mdp.actions import actions_cfg as il_actions_cfg
 from isaaclab.envs.mdp.actions import joint_actions as il_joint_actions
@@ -11,7 +11,7 @@ from . import asr_pybindings # derived from ~/src/kross, ~/src/asura, ~/src/asur
 from . import stiff_utils
 from . import asura
 
-def debug_print(msg1, msg2=""):
+def debug_print(msg1, msg2=None):
     return 
     print(msg1)
     if msg2:
@@ -69,8 +69,28 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
         # constants for optimization
         self.joint_names = list(self._joint_names)
         self.joint_names = [name.replace('waist_pitch_joint', 'torso_joint').replace('_joint', '_link') for name in self.joint_names] # convert to asr naming
+        self._joint_names_np = np.array(self.joint_names, dtype=object)
         debug_print("type of self._joint_names:", self._joint_names)
 
+        try:
+            self._asr_joint_names_native = stiff_utils.get_current_joint_order_names(self.asr_robot)
+            self._asr_perm_to_env = stiff_utils.build_perm_from_lists(
+                self._asr_joint_names_native, self.joint_names
+            )
+        except stiff_utils.ReorderError as err:
+            raise RuntimeError(
+                "Failed to build joint-name permutation between ASR robot and environment joints."
+            ) from err
+        self._asr_perm_ix = np.ix_(self._asr_perm_to_env, self._asr_perm_to_env)
+
+        # cache contact sensor and body indices so we avoid repeated regex lookups each step
+        self._contact_sensor = self._get_contact_sensor()
+        (
+            self._left_contact_body_ids,
+            self._right_contact_body_ids,
+        ) = self._resolve_contact_body_ids(self._contact_sensor)
+
+        
     def apply_actions(self):
         q_des = self.processed_actions
 
@@ -79,22 +99,17 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
         debug_print("self._joint_ids:", self._joint_ids)
 
         q_cpu = q.detach().cpu()
+        q_cpu_np = q_cpu.contiguous().numpy()
         # print(len(self.joint_names), self.joint_names)
-        self.joint_angle_dicts_rad = [
-            {self.joint_names[j]: float(q_cpu[i, j].item()) for j in range(q_cpu.shape[1])}
-            for i in range(q_cpu.shape[0])
-        ]
+        self.joint_angle_dicts_rad = [dict(zip(self._joint_names_np, row)) for row in q_cpu_np]
 
         # get Contact State from env
         left_contact = torch.zeros(self.num_envs, device=self.device)
         right_contact = torch.zeros(self.num_envs, device=self.device)
         try:
-            contact_sensor = self._env.scene.sensors["contact_forces"]
-            # Resolve body indices for left/right using regex patterns.
-            left_ids, _ = contact_sensor.find_bodies([r".*left.*ankle.*roll.*"])  # type: ignore[arg-type]
-            right_ids, _ = contact_sensor.find_bodies([r".*right.*ankle.*roll.*"])  # type: ignore[arg-type]
-            if len(left_ids) == 0 or  len(right_ids) == 0:
-                raise ValueError("Failed to find left/right ankle roll links using regex.")
+            contact_sensor = self._contact_sensor
+            left_ids = self._left_contact_body_ids
+            right_ids = self._right_contact_body_ids
             # Compute per-env contact as 1.0 if any of the matched bodies are in contact (current_contact_time > 0)
             if getattr(contact_sensor.cfg, "track_air_time", False):
                 ctime = contact_sensor.data.current_contact_time  # (N, B)
@@ -165,10 +180,32 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
             if not left and not right:
                 pass
 
-            stiff_np = stiff_utils.get_reordered_joint_stiff(self.asr_robot, target_names=self.joint_names)
-            visco_np = stiff_utils.get_reordered_joint_visco(self.asr_robot, target_names=self.joint_names)
-            self.stiff[i] = torch.from_numpy(stiff_np).to(device=self.device, dtype=self.stiff.dtype)
-            self.visco[i] = torch.from_numpy(visco_np).to(device=self.device, dtype=self.visco.dtype)
+            stiff_native = np.asarray(self.asr_robot._joint_stiff)
+            visco_native = np.asarray(self.asr_robot._joint_visco)
+            stiff_np = stiff_native[self._asr_perm_ix].copy()
+            visco_np = visco_native[self._asr_perm_ix].copy()
+            stiff_tensor = torch.from_numpy(stiff_np).to(device=self.device, dtype=self.stiff.dtype)
+            visco_tensor = torch.from_numpy(visco_np).to(device=self.device, dtype=self.visco.dtype)
+            self.stiff[i].copy_(stiff_tensor)
+            self.visco[i].copy_(visco_tensor)
+            
+            if not __debug__:
+                # Debug-only verification: confirm cached permutation matches legacy helpers.
+                stiff_native = np.asarray(self.asr_robot._joint_stiff)
+                visco_native = np.asarray(self.asr_robot._joint_visco)
+                stiff_legacy = stiff_utils.get_reordered_joint_stiff(
+                    self.asr_robot, target_names=self.joint_names, copy=True
+                )
+                visco_legacy = stiff_utils.get_reordered_joint_visco(
+                    self.asr_robot, target_names=self.joint_names, copy=True
+                )
+                stiff_cached = stiff_native[self._asr_perm_ix]
+                visco_cached = visco_native[self._asr_perm_ix]
+                if np.allclose(stiff_legacy, stiff_cached):
+                    raise RuntimeError("Cached stiffness permutation mismatch with legacy helper.")
+                if not np.allclose(visco_legacy, visco_cached):
+                    raise RuntimeError("Cached viscosity permutation mismatch with legacy helper.")
+
 
         pos_err = (q_des - q).unsqueeze(1)
         vel = qd.unsqueeze(1)
@@ -177,6 +214,21 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
         tau = torch.clamp(tau, min=-80.0, max=80.0)
 
         self._asset.set_joint_effort_target(tau, joint_ids=self._joint_ids)
+
+    def _get_contact_sensor(self):
+        try:
+            return self._env.scene.sensors["contact_forces"]
+        except KeyError as exc:
+            raise RuntimeError(
+                "Contact sensor 'contact_forces' is missing from the scene. Ensure it is configured before initializing the action."
+            ) from exc
+
+    def _resolve_contact_body_ids(self, contact_sensor) -> Tuple[List[int], List[int]]:
+        left_ids, _ = contact_sensor.find_bodies([r".*left.*ankle.*roll.*"])
+        right_ids, _ = contact_sensor.find_bodies([r".*right.*ankle.*roll.*"])
+        if len(left_ids) == 0 or len(right_ids) == 0:
+            raise ValueError("Failed to find left/right ankle roll links using regex during initialization.")
+        return left_ids, right_ids
 
 @configclass
 class JointPositionDDCActionCfg(il_actions_cfg.JointActionCfg):

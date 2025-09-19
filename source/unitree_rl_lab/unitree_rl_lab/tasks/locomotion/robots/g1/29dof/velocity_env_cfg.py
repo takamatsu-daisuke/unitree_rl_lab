@@ -182,7 +182,8 @@ class CommandsCfg:
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    JointPositionAction = JointPositionDDCActionCfg(
+    # JointPositionAction = JointPositionDDCActionCfg(
+    JointPositionAction = JointPositionDDCMultiActionCfg(
         asset_name="robot", joint_names=[".*"], scale=0.25, use_default_offset=True,
         asr_robot_filename="ascii/g1_29dof_rev1.asr"
     )
