@@ -1,5 +1,4 @@
 from typing import Dict
-import math
 
 def set_joint_angles_by_name(robot, joint_angles_dict: Dict[str, float]) -> None:
     """
@@ -27,4 +26,4 @@ def set_joint_angles_by_name(robot, joint_angles_dict: Dict[str, float]) -> None
         link_id = robot.asrRobotLinkFindByNamePybind(joint_name)
         if link_id == -1:
             raise ValueError(f"Joint/link '{joint_name}' not found in ASURA robot")
-        robot.asrRobotLinkSetAngPybind(link_id, math.degrees(angle))  # ASURA uses degrees, convert from radians
+        robot.asrRobotLinkSetAngPybind(link_id, angle)

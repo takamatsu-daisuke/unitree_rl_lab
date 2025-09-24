@@ -1,5 +1,4 @@
 import atexit
-import math
 import os
 from dataclasses import dataclass
 from multiprocessing.pool import Pool
@@ -30,9 +29,16 @@ class _WorkerContext:
     joint_names: List[str]
     perm_to_env: np.ndarray
     perm_ix: Tuple[np.ndarray, np.ndarray]
+    eps: float
 
 
 _WORKER_CONTEXT: Optional[_WorkerContext] = None
+
+
+def _identity_kmat(size: int) -> "asr_pybindings.kMat":
+    """Return an identity matrix wrapped in `kMat`."""
+
+    return asr_pybindings.kMat.from_numpy(np.eye(size, dtype=np.float64))
 
 
 def _resolve_asr_path(filename: Optional[str]) -> str:
@@ -46,7 +52,7 @@ def _resolve_asr_path(filename: Optional[str]) -> str:
     return str(path)
 
 
-def _init_worker(asr_path: str, joint_names: Sequence[str]) -> None:
+def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: float) -> None:
     """Initializer executed in each worker process."""
     global _WORKER_CONTEXT
 
@@ -70,7 +76,7 @@ def _init_worker(asr_path: str, joint_names: Sequence[str]) -> None:
     w2 = lipm.kLIPModelCreate3DPybind(0.88, 0.0)
     gain_np = lipm.kLIPModelSetRegulatorPybind(w2, 0.5, 0.5)
     gain = asr_pybindings.kMat.from_numpy(gain_np)
-    k_z = 500.0
+    k_z = cog_kz
     asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_single, cog_index)
     asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_double, cog_index)
     asr_pybindings.asrTaskCountStatusPybind(task_single)
@@ -111,6 +117,7 @@ def _init_worker(asr_path: str, joint_names: Sequence[str]) -> None:
         joint_names=joint_names_list,
         perm_to_env=perm_to_env,
         perm_ix=perm_ix,
+        eps=eps,
     )
 
 
@@ -122,53 +129,54 @@ def _compute_stiffness(payload: Tuple[int, Sequence[float], bool, bool]) -> Tupl
     env_id, joint_angles_rad, left, right = payload
     ctx = _WORKER_CONTEXT
 
-    joint_angles_deg = [math.degrees(angle) for angle in joint_angles_rad]
-    for link_id, angle_deg in zip(ctx.joint_link_ids, joint_angles_deg):
-        ctx.robot.asrRobotLinkSetAngPybind(link_id, angle_deg)
+    for link_id, angle in zip(ctx.joint_link_ids, joint_angles_rad):
+        ctx.robot.asrRobotLinkSetAngPybind(link_id, angle)
     ctx.robot.asrRobotUpdateStatePybind()
     ctx.robot.asrRobotFwdKinematicsPybind()
-
-    eps = 1e-6
-    gain_scale = 50.0
 
     if left and right:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_double)
         asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
-        inertia = asr_pybindings.kMat(ctx.robot.joint_num, ctx.robot.joint_num)
-        asr_pybindings.asrRobotCalcInertiaSinglePybind(ctx.robot, ctx.pivot_id_left, inertia)
-        M = inertia.to_numpy()
-        M = 0.5 * (M + M.T)
-        ref_k = asr_pybindings.kMat.from_numpy(M * gain_scale + np.eye(M.shape[0]) * eps)
-        ref_d = asr_pybindings.kMat.from_numpy(
-            M * (2.0 * np.sqrt(gain_scale)) + np.eye(M.shape[0]) * (2.0 * np.sqrt(gain_scale) * eps)
-        )
+        size = max(int(ctx.robot.joint_num) - 6, 1)
+        ref_k = _identity_kmat(size)
+        ref_d = _identity_kmat(size)
         asr_pybindings.asrRVCCalcDCCDoublePybind(
-            ctx.robot, ctx.pivot_id_left, ctx.pivot_id_right, ctx.task_double, ref_k, ref_d, eps
+            ctx.robot,
+            ctx.pivot_id_left,
+            ctx.pivot_id_right,
+            ctx.task_double,
+            ref_k,
+            ref_d,
+            ctx.eps,
         )
     elif left and not right:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
         asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
-        inertia = asr_pybindings.kMat(ctx.robot.joint_num, ctx.robot.joint_num)
-        asr_pybindings.asrRobotCalcInertiaSinglePybind(ctx.robot, ctx.pivot_id_left, inertia)
-        M = inertia.to_numpy()
-        M = 0.5 * (M + M.T)
-        ref_k = asr_pybindings.kMat.from_numpy(M * gain_scale + np.eye(M.shape[0]) * eps)
-        ref_d = asr_pybindings.kMat.from_numpy(
-            M * (2.0 * np.sqrt(gain_scale)) + np.eye(M.shape[0]) * (2.0 * np.sqrt(gain_scale) * eps)
+        size = int(ctx.robot.joint_num)
+        ref_k = _identity_kmat(size)
+        ref_d = _identity_kmat(size)
+        asr_pybindings.asrRVCCalcDCCSinglePybind(
+            ctx.robot,
+            ctx.pivot_id_left,
+            ctx.task_single,
+            ref_k,
+            ref_d,
+            ctx.eps,
         )
-        asr_pybindings.asrRVCCalcDCCSinglePybind(ctx.robot, ctx.pivot_id_left, ctx.task_single, ref_k, ref_d, eps)
     elif right and not left:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
         asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
-        inertia = asr_pybindings.kMat(ctx.robot.joint_num, ctx.robot.joint_num)
-        asr_pybindings.asrRobotCalcInertiaSinglePybind(ctx.robot, ctx.pivot_id_right, inertia)
-        M = inertia.to_numpy()
-        M = 0.5 * (M + M.T)
-        ref_k = asr_pybindings.kMat.from_numpy(M * gain_scale + np.eye(M.shape[0]) * eps)
-        ref_d = asr_pybindings.kMat.from_numpy(
-            M * (2.0 * np.sqrt(gain_scale)) + np.eye(M.shape[0]) * (2.0 * np.sqrt(gain_scale) * eps)
+        size = int(ctx.robot.joint_num)
+        ref_k = _identity_kmat(size)
+        ref_d = _identity_kmat(size)
+        asr_pybindings.asrRVCCalcDCCSinglePybind(
+            ctx.robot,
+            ctx.pivot_id_right,
+            ctx.task_single,
+            ref_k,
+            ref_d,
+            ctx.eps,
         )
-        asr_pybindings.asrRVCCalcDCCSinglePybind(ctx.robot, ctx.pivot_id_right, ctx.task_single, ref_k, ref_d, eps)
     # If both feet are in the air, keep the previous stiffness/viscosity matrices.
 
     stiff_native = np.asarray(ctx.robot._joint_stiff)
@@ -212,7 +220,12 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
             self._pool = ctx.Pool(
                 processes=self._num_workers,
                 initializer=_init_worker,
-                initargs=(self._resolved_asr_path, self.joint_names),
+                initargs=(
+                    self._resolved_asr_path,
+                    self.joint_names,
+                    self._ddc_eps,
+                    self._ddc_cog_kz,
+                ),
             )
             atexit.register(self._shutdown_pool)
         else:
@@ -280,6 +293,14 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
             stiff_np_list[env_id] = stiff_np
             visco_np_list[env_id] = visco_np
 
+        # log_path_stiff = Path(__file__).resolve().parent / "stiff_np_list0.log"
+        # with log_path_stiff.open("a", encoding="utf-8") as log_file:
+        #     log_file.write(str(stiff_np_list[0]))
+        #     log_file.write("\n\n")
+        # log_path_visco = Path(__file__).resolve().parent / "visco_np_list0.log"
+        # with log_path_visco.open("a", encoding="utf-8") as log_file:
+        #     log_file.write(str(visco_np_list[0]))
+        #     log_file.write("\n\n")
         if any(item is None for item in stiff_np_list) or any(item is None for item in visco_np_list):
             raise RuntimeError("Missing stiffness/viscosity result for one or more environments.")
 
@@ -302,6 +323,22 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
         pos_err = (q_des - q).unsqueeze(1)
         vel = qd.unsqueeze(1)
         tau = torch.bmm(pos_err, self.stiff).squeeze(1) - torch.bmm(vel, self.visco).squeeze(1)
+        log_path_tau = Path(__file__).resolve().parent / "tau0.log"
+        with log_path_tau.open("a", encoding="utf-8") as log_file:
+            log_file.write(str(tau[0].cpu().numpy()))
+            log_file.write("\n\n")
+        # log_path_q = Path(__file__).resolve().parent / "q0.log"
+        # with log_path_q.open("a", encoding="utf-8") as log_file:
+        #     log_file.write(str(q[0].cpu().numpy()))
+        #     log_file.write("\n\n")
+        # log_path_qd = Path(__file__).resolve().parent / "qd0.log"
+        # with log_path_qd.open("a", encoding="utf-8") as log_file:
+        #     log_file.write(str(qd[0].cpu().numpy()))
+        #     log_file.write("\n\n")
+        # log_path_q_des = Path(__file__).resolve().parent / "q_des0.log"
+        # with log_path_q_des.open("a", encoding="utf-8") as log_file:
+        #     log_file.write(str(q_des[0].cpu().numpy()))
+        #     log_file.write("\n\n")
         tau = torch.clamp(tau, min=-80.0, max=80.0)
 
         self._asset.set_joint_effort_target(tau, joint_ids=self._joint_ids)

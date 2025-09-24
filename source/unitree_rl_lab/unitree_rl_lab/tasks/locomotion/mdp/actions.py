@@ -17,6 +17,12 @@ def debug_print(msg1, msg2=None):
     if msg2:
         print(msg2)
 
+
+def _identity_kmat(size: int) -> "asr_pybindings.kMat":
+    """Return an identity matrix wrapped in `kMat`."""
+
+    return asr_pybindings.kMat.from_numpy(np.eye(size, dtype=np.float64))
+
 class JointPositionDDCAction(il_joint_actions.JointPositionAction):
     def __init__(self, cfg: il_actions_cfg.JointActionCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
@@ -43,10 +49,10 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
 
         ## LIPM-based COG viscoelasticity for both tasks
         self.asr_lipm = asr_pybindings.LTISys()
-        w2 = self.asr_lipm.kLIPModelCreate3DPybind(0.88, 0.0)
+        w2 = self.asr_lipm.kLIPModelCreate3DPybind(0.6, 0.0)
         gain_np = self.asr_lipm.kLIPModelSetRegulatorPybind(w2, 0.5, 0.5)
         gain = asr_pybindings.kMat.from_numpy(gain_np)
-        K_Z = 500.0
+        K_Z = 5.0
         asr_pybindings.asrRobotCalcCOGVEFromGainPybind(self.asr_robot, gain, K_Z, self.asr_task_single, COG)
         asr_pybindings.asrRobotCalcCOGVEFromGainPybind(self.asr_robot, gain, K_Z, self.asr_task_double, COG)
         asr_pybindings.asrTaskCountStatusPybind(self.asr_task_single)
@@ -65,6 +71,10 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
         # variables to record stiff and visco 
         self.stiff = torch.zeros(self.num_envs, dof_joint, dof_joint, device=self.device)
         self.visco = torch.zeros(self.num_envs, dof_joint, dof_joint, device=self.device)
+
+        # DDC tuning constants (aligned with ASURA reference controllers)
+        self._ddc_cog_kz = K_Z
+        self._ddc_eps = 1e-6
 
         # constants for optimization
         self.joint_names = list(self._joint_names)
@@ -135,47 +145,47 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
             if left and right:
                 asr_pybindings.asrRobotTaskFwdKinematicsPybind(self.asr_robot, self.asr_task_double)
                 asr_pybindings.asrRobotCalcInertiaPybind(self.asr_robot)
-                inertia = asr_pybindings.kMat(self.asr_robot.joint_num, self.asr_robot.joint_num)
-                asr_pybindings.asrRobotCalcInertiaSinglePybind(self.asr_robot, self.pivot_id_left, inertia)
-                P = 5.0 # TODO 
-                M = inertia.to_numpy()
-                # Symmetrize and add small diagonal regularization to avoid singular/ill-conditioned cases
-                M = 0.5 * (M + M.T) # TODO 
-                eps = 1e-6
-                ref_k = asr_pybindings.kMat.from_numpy(M * P + np.eye(M.shape[0]) * eps) # TODO 
-                ref_d = asr_pybindings.kMat.from_numpy(M * (2.0*np.sqrt(P)) + np.eye(M.shape[0]) * (2.0*np.sqrt(P)*eps)) # TODO 
+                size = max(int(self.asr_robot.joint_num) - 6, 1)
+                ref_k = _identity_kmat(size)
+                ref_d = _identity_kmat(size)
                 asr_pybindings.asrRVCCalcDCCDoublePybind(
-                    self.asr_robot, self.pivot_id_left, self.pivot_id_right, self.asr_task_double, ref_k, ref_d, 1e-6
+                    self.asr_robot,
+                    self.pivot_id_left,
+                    self.pivot_id_right,
+                    self.asr_task_double,
+                    ref_k,
+                    ref_d,
+                    self._ddc_eps,
                 )
             
             if left and not right:
                 asr_pybindings.asrRobotTaskFwdKinematicsPybind(self.asr_robot, self.asr_task_single)
                 asr_pybindings.asrRobotCalcInertiaPybind(self.asr_robot)
-                inertia = asr_pybindings.kMat(self.asr_robot.joint_num, self.asr_robot.joint_num)
-                asr_pybindings.asrRobotCalcInertiaSinglePybind(self.asr_robot, self.pivot_id_left, inertia)
-                P = 5.0
-                M = inertia.to_numpy()
-                M = 0.5 * (M + M.T)
-                eps = 1e-6
-                ref_k = asr_pybindings.kMat.from_numpy(M * P + np.eye(M.shape[0]) * eps)
-                ref_d = asr_pybindings.kMat.from_numpy(M * (2.0*np.sqrt(P)) + np.eye(M.shape[0]) * (2.0*np.sqrt(P)*eps))
+                size = int(self.asr_robot.joint_num)
+                ref_k = _identity_kmat(size)
+                ref_d = _identity_kmat(size)
                 asr_pybindings.asrRVCCalcDCCSinglePybind(
-                    self.asr_robot, self.pivot_id_left, self.asr_task_single, ref_k, ref_d, 1e-6
+                    self.asr_robot,
+                    self.pivot_id_left,
+                    self.asr_task_single,
+                    ref_k,
+                    ref_d,
+                    self._ddc_eps,
                 )
 
             if not left and right:
                 asr_pybindings.asrRobotTaskFwdKinematicsPybind(self.asr_robot, self.asr_task_single)
                 asr_pybindings.asrRobotCalcInertiaPybind(self.asr_robot)
-                inertia = asr_pybindings.kMat(self.asr_robot.joint_num, self.asr_robot.joint_num)
-                asr_pybindings.asrRobotCalcInertiaSinglePybind(self.asr_robot, self.pivot_id_right, inertia)
-                P = 5.0
-                M = inertia.to_numpy()
-                M = 0.5 * (M + M.T)
-                eps = 1e-6
-                ref_k = asr_pybindings.kMat.from_numpy(M * P + np.eye(M.shape[0]) * eps)
-                ref_d = asr_pybindings.kMat.from_numpy(M * (2.0*np.sqrt(P)) + np.eye(M.shape[0]) * (2.0*np.sqrt(P)*eps))
+                size = int(self.asr_robot.joint_num)
+                ref_k = _identity_kmat(size)
+                ref_d = _identity_kmat(size)
                 asr_pybindings.asrRVCCalcDCCSinglePybind(
-                    self.asr_robot, self.pivot_id_right, self.asr_task_single, ref_k, ref_d, 1e-6
+                    self.asr_robot,
+                    self.pivot_id_right,
+                    self.asr_task_single,
+                    ref_k,
+                    ref_d,
+                    self._ddc_eps,
                 )
             if not left and not right:
                 pass
