@@ -17,9 +17,9 @@ from . import asr_pybindings, stiff_utils
 from .actions import JointPositionDDCAction, JointPositionDDCActionCfg
 
 
-_DOUBLE_SUPPORT_STIFF_GAIN = 10.0
+_DOUBLE_SUPPORT_STIFF_GAIN = 200.0
 _DOUBLE_SUPPORT_VISCO_GAIN = math.sqrt(_DOUBLE_SUPPORT_STIFF_GAIN) * 2.0
-
+_DEBUG_PRINT = False
 
 @dataclass
 class _WorkerContext:
@@ -38,6 +38,8 @@ class _WorkerContext:
 
 
 _WORKER_CONTEXT: Optional[_WorkerContext] = None
+_COG_GAIN_LOG_PATH = Path(__file__).resolve().parent / "cog_gain.log"
+_COG_GAIN_PRINTED = False
 
 
 def _diag_kmat(size: int, *, value: float = 20) -> "asr_pybindings.kMat":
@@ -69,6 +71,16 @@ def _quat_to_rpy(quat_xyzw: np.ndarray) -> np.ndarray:
     return np.stack((roll, pitch, yaw), axis=-1)
 
 
+def _format_matrix_full(matrix: np.ndarray) -> str:
+    """Return a non-summarized string representation of the matrix."""
+
+    if hasattr(matrix, "to_numpy"):
+        matrix_np = matrix.to_numpy()
+    else:
+        matrix_np = np.asarray(matrix)
+    return np.array2string(matrix_np, threshold=matrix_np.size)
+
+
 def _resolve_asr_path(filename: Optional[str]) -> str:
     """Resolve ASR model path relative to this package if needed."""
     if filename is None:
@@ -82,7 +94,7 @@ def _resolve_asr_path(filename: Optional[str]) -> str:
 
 def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: float) -> None:
     """Initializer executed in each worker process."""
-    global _WORKER_CONTEXT
+    global _WORKER_CONTEXT, _COG_GAIN_PRINTED
 
     robot = asr_pybindings.Robot(asr_path)
     robot.asrRobotReadFilePybind(asr_path)
@@ -109,6 +121,15 @@ def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: 
     asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_double, cog_index)
     asr_pybindings.asrTaskCountStatusPybind(task_single)
     asr_pybindings.asrTaskCountStatusPybind(task_double)
+
+    if _DEBUG_PRINT:
+        gain_np = gain.to_numpy()
+        with _COG_GAIN_LOG_PATH.open("a", encoding="utf-8") as log_file:
+            log_file.write(_format_matrix_full(gain_np))
+            log_file.write("\n\n")
+        if not _COG_GAIN_PRINTED:
+            print("asrRobotCalcCOGVEFromGainPybind gain matrix:\n" + _format_matrix_full(gain_np))
+            _COG_GAIN_PRINTED = True
 
     pivot_id_left = robot.asrRobotLinkFindByNamePybind("left_ankle_roll_link")
     pivot_id_right = robot.asrRobotLinkFindByNamePybind("right_ankle_roll_link")
@@ -175,13 +196,23 @@ def _compute_stiffness(
 
     if left and right:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_double)
-        asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        if _DEBUG_PRINT and env_id == 0:
+            log_path_inertia = Path(__file__).resolve().parent / "inertia0.log"
+            with log_path_inertia.open("a", encoding="utf-8") as log_file:
+                log_file.write(_format_matrix_full(inertia))
+                log_file.write("\n\n")
         projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
         asr_pybindings.asrRobotCalcInertiaSinglePybind(
             ctx.robot,
             ctx.pivot_id_left,
             projected_inertia,
         )
+        if _DEBUG_PRINT and env_id == 0:
+            log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
+            with log_path_proj.open("a", encoding="utf-8") as log_file:
+                log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
+                log_file.write("\n\n")
         ref_k = projected_inertia.clone()
         ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
         ref_d = projected_inertia.clone()
@@ -199,13 +230,23 @@ def _compute_stiffness(
         visco_native = np.asarray(ctx.robot._joint_visco)
     elif left and not right:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
-        _ = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        if _DEBUG_PRINT and env_id == 0:
+            log_path_inertia = Path(__file__).resolve().parent / "inertia0.log"
+            with log_path_inertia.open("a", encoding="utf-8") as log_file:
+                log_file.write(_format_matrix_full(inertia))
+                log_file.write("\n\n")
         projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
         asr_pybindings.asrRobotCalcInertiaSinglePybind(
             ctx.robot,
             ctx.pivot_id_left,
             projected_inertia,
         )
+        if _DEBUG_PRINT and env_id == 0:
+            log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
+            with log_path_proj.open("a", encoding="utf-8") as log_file:
+                log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
+                log_file.write("\n\n")
         ref_k = projected_inertia.clone()
         ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
         ref_d = projected_inertia.clone()
@@ -222,13 +263,23 @@ def _compute_stiffness(
         visco_native = np.asarray(ctx.robot._joint_visco)
     elif right and not left:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
-        _ = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        if _DEBUG_PRINT and env_id == 0:
+            log_path_inertia = Path(__file__).resolve().parent / "inertia0.log"
+            with log_path_inertia.open("a", encoding="utf-8") as log_file:
+                log_file.write(_format_matrix_full(inertia))
+                log_file.write("\n\n")
         projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
         asr_pybindings.asrRobotCalcInertiaSinglePybind(
             ctx.robot,
             ctx.pivot_id_right,
             projected_inertia,
         )
+        if _DEBUG_PRINT and env_id == 0:
+            log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
+            with log_path_proj.open("a", encoding="utf-8") as log_file:
+                log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
+                log_file.write("\n\n")
         ref_k = projected_inertia.clone()
         ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
         ref_d = projected_inertia.clone()
@@ -244,6 +295,25 @@ def _compute_stiffness(
         stiff_native = np.asarray(ctx.robot._joint_stiff)
         visco_native = np.asarray(ctx.robot._joint_visco)
     else:
+        if _DEBUG_PRINT:
+            asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
+            inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+            if env_id == 0:
+                log_path_inertia = Path(__file__).resolve().parent / "inertia0.log"
+                with log_path_inertia.open("a", encoding="utf-8") as log_file:
+                    log_file.write(_format_matrix_full(inertia))
+                    log_file.write("\n\n")
+            projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
+            asr_pybindings.asrRobotCalcInertiaSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_right,
+                projected_inertia,
+            )
+            if env_id == 0:
+                log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
+                with log_path_proj.open("a", encoding="utf-8") as log_file:
+                    log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
+                    log_file.write("\n\n")
         stiff_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 150
         visco_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 5.0
 
@@ -357,27 +427,28 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
             stiff_np_list[env_id] = stiff_np
             visco_np_list[env_id] = visco_np
 
-        log_path_stiff = Path(__file__).resolve().parent / "stiff_np_list0.log"
-        with log_path_stiff.open("a", encoding="utf-8") as log_file:
-            log_file.write(str(stiff_np_list[0]))
-            log_file.write("\n\n")
-        log_path_visco = Path(__file__).resolve().parent / "visco_np_list0.log"
-        with log_path_visco.open("a", encoding="utf-8") as log_file:
-            log_file.write(str(visco_np_list[0]))
-            log_file.write("\n\n")
-        if any(item is None for item in stiff_np_list) or any(item is None for item in visco_np_list):
-            raise RuntimeError("Missing stiffness/viscosity result for one or more environments.")
+        if _DEBUG_PRINT:
+            log_path_stiff = Path(__file__).resolve().parent / "stiff_np_list0.log"
+            with log_path_stiff.open("a", encoding="utf-8") as log_file:
+                log_file.write(str(stiff_np_list[0]))
+                log_file.write("\n\n")
+            log_path_visco = Path(__file__).resolve().parent / "visco_np_list0.log"
+            with log_path_visco.open("a", encoding="utf-8") as log_file:
+                log_file.write(str(visco_np_list[0]))
+                log_file.write("\n\n")
+            if any(item is None for item in stiff_np_list) or any(item is None for item in visco_np_list):
+                raise RuntimeError("Missing stiffness/viscosity result for one or more environments.")
 
-        log_path_stand = Path(__file__).resolve().parent / "stand0.log"
-        with log_path_stand.open("a", encoding="utf-8") as log_file:
-            if left_in_contact[0] and right_in_contact[0]:
-                log_file.write("Double\n")
-            elif left_in_contact[0] and not right_in_contact[0]:
-                log_file.write("Left\n")
-            elif not left_in_contact[0] and right_in_contact[0]:
-                log_file.write("Right\n")
-            else:
-                log_file.write("Air\n")
+            log_path_stand = Path(__file__).resolve().parent / "stand0.log"
+            with log_path_stand.open("a", encoding="utf-8") as log_file:
+                if left_in_contact[0] and right_in_contact[0]:
+                    log_file.write("Double\n")
+                elif left_in_contact[0] and not right_in_contact[0]:
+                    log_file.write("Left\n")
+                elif not left_in_contact[0] and right_in_contact[0]:
+                    log_file.write("Right\n")
+                else:
+                    log_file.write("Air\n")
 
         stiff_arrays = cast(List[np.ndarray], stiff_np_list)
         visco_arrays = cast(List[np.ndarray], visco_np_list)
@@ -398,22 +469,23 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
         pos_err = (q_des - q).unsqueeze(1)
         vel = qd.unsqueeze(1)
         tau = torch.bmm(pos_err, self.stiff).squeeze(1) - torch.bmm(vel, self.visco).squeeze(1)
-        log_path_tau = Path(__file__).resolve().parent / "tau0.log"
-        with log_path_tau.open("a", encoding="utf-8") as log_file:
-            log_file.write(str(tau[0].cpu().numpy()))
-            log_file.write("\n\n")
-        # log_path_q = Path(__file__).resolve().parent / "q0.log"
-        # with log_path_q.open("a", encoding="utf-8") as log_file:
-        #     log_file.write(str(q[0].cpu().numpy()))
-        #     log_file.write("\n\n")
-        # log_path_qd = Path(__file__).resolve().parent / "qd0.log"
-        # with log_path_qd.open("a", encoding="utf-8") as log_file:
-        #     log_file.write(str(qd[0].cpu().numpy()))
-        #     log_file.write("\n\n")
-        # log_path_q_des = Path(__file__).resolve().parent / "q_des0.log"
-        # with log_path_q_des.open("a", encoding="utf-8") as log_file:
-        #     log_file.write(str(q_des[0].cpu().numpy()))
-        #     log_file.write("\n\n")
+        if _DEBUG_PRINT:
+            log_path_tau = Path(__file__).resolve().parent / "tau0.log"
+            with log_path_tau.open("a", encoding="utf-8") as log_file:
+                log_file.write(str(tau[0].cpu().numpy()))
+                log_file.write("\n\n")
+            log_path_q = Path(__file__).resolve().parent / "q0.log"
+            with log_path_q.open("a", encoding="utf-8") as log_file:
+                log_file.write(str(q[0].cpu().numpy()))
+                log_file.write("\n\n")
+            log_path_qd = Path(__file__).resolve().parent / "qd0.log"
+            with log_path_qd.open("a", encoding="utf-8") as log_file:
+                log_file.write(str(qd[0].cpu().numpy()))
+                log_file.write("\n\n")
+            log_path_q_des = Path(__file__).resolve().parent / "q_des0.log"
+            with log_path_q_des.open("a", encoding="utf-8") as log_file:
+                log_file.write(str(q_des[0].cpu().numpy()))
+                log_file.write("\n\n")
         tau = torch.clamp(tau, min=-80.0, max=80.0)
 
         self._asset.set_joint_effort_target(tau, joint_ids=self._joint_ids)
