@@ -1,64 +1,314 @@
-import torch
-import numpy as np
-from typing import List, Optional, Tuple
+import atexit
+import os
+from dataclasses import dataclass
+from multiprocessing.pool import Pool
+from pathlib import Path
+from typing import List, Optional, Sequence, Tuple, cast
 
+import numpy as np
+import torch
+import torch.multiprocessing as torch_mp
+
+from isaaclab.envs import ManagerBasedEnv
 from isaaclab.envs.mdp.actions import actions_cfg as il_actions_cfg
 from isaaclab.envs.mdp.actions import joint_actions as il_joint_actions
-from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
 from isaaclab.utils import configclass
 
-from . import asr_pybindings # derived from ~/src/kross, ~/src/asura, ~/src/asura_pybind
-from . import stiff_utils
-from . import asura
-
-def debug_print(msg1, msg2=None):
-    return 
-    print(msg1)
-    if msg2:
-        print(msg2)
+from . import asr_pybindings, stiff_utils, asura
 
 
-def _identity_kmat(size: int) -> "asr_pybindings.kMat":
-    """Return an identity matrix wrapped in `kMat`."""
+_DOUBLE_SUPPORT_STIFF_GAIN = 20.0
+_DOUBLE_SUPPORT_VISCO_GAIN = 2.0
 
-    return asr_pybindings.kMat.from_numpy(np.eye(size, dtype=np.float64))
+
+@dataclass
+class _WorkerContext:
+    """Container for per-process reusable ASR objects."""
+
+    robot: "asr_pybindings.Robot"
+    task_single: "asr_pybindings.TaskCore"
+    task_double: "asr_pybindings.TaskCore"
+    pivot_id_left: int
+    pivot_id_right: int
+    joint_link_ids: List[int]
+    joint_names: List[str]
+    perm_to_env: np.ndarray
+    perm_ix: Tuple[np.ndarray, np.ndarray]
+    eps: float
+
+
+_WORKER_CONTEXT: Optional[_WorkerContext] = None
+
+
+def _diag_kmat(size: int, *, value: float = 20) -> "asr_pybindings.kMat":
+    """Return a diagonal matrix with `value` on the diagonal wrapped in `kMat`."""
+
+    return asr_pybindings.kMat.from_numpy(np.eye(size, dtype=np.float64) * value)
+
+
+def _quat_to_rpy(quat_xyzw: np.ndarray) -> np.ndarray:
+    """Convert XYZW quaternions to roll, pitch, yaw (radians)."""
+
+    quat = np.asarray(quat_xyzw, dtype=np.float64)
+    x = quat[..., 0]
+    y = quat[..., 1]
+    z = quat[..., 2]
+    w = quat[..., 3]
+
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    sinp = 2.0 * (w * y - z * x)
+    pitch = np.arcsin(np.clip(sinp, -1.0, 1.0))
+
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    return np.stack((roll, pitch, yaw), axis=-1)
+
+
+def _resolve_asr_path(filename: Optional[str]) -> str:
+    """Resolve ASR model path relative to this package if needed."""
+
+    if filename is None:
+        base = Path(__file__).resolve().parent
+        return str(base / "ascii" / "g1_29dof_rev1.asr")
+    path = Path(filename)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / filename
+    return str(path)
+
+
+def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: float) -> None:
+    """Initializer executed in each worker process."""
+
+    global _WORKER_CONTEXT
+
+    robot = asr_pybindings.Robot(asr_path)
+    robot.asrRobotReadFilePybind(asr_path)
+    robot._init_joint_matrices()
+
+    cog_index = 0
+    dof_joint = int(robot.joint_num)
+    dof_double = max(dof_joint - 6, 1)
+
+    task_single = asr_pybindings.TaskCore(dof_joint)
+    asr_pybindings.asrTaskMarkerInitPybind(task_single, cog_index, asr_pybindings.MarkerType.COG, dof_joint)
+    asr_pybindings.asrTaskMarkerOnPybind(task_single, cog_index)
+
+    task_double = asr_pybindings.TaskCore(dof_double)
+    asr_pybindings.asrTaskMarkerInitPybind(task_double, cog_index, asr_pybindings.MarkerType.COG, dof_double)
+    asr_pybindings.asrTaskMarkerOnPybind(task_double, cog_index)
+
+    lipm = asr_pybindings.LTISys()
+    w2 = lipm.kLIPModelCreate3DPybind(0.88, 0.0)
+    gain_np = lipm.kLIPModelSetRegulatorPybind(w2, 0.5, 0.5)
+    gain = asr_pybindings.kMat.from_numpy(gain_np)
+    k_z = 50000
+    asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_single, cog_index)
+    asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_double, cog_index)
+    asr_pybindings.asrTaskCountStatusPybind(task_single)
+    asr_pybindings.asrTaskCountStatusPybind(task_double)
+
+    pivot_id_left = robot.asrRobotLinkFindByNamePybind("left_ankle_roll_link")
+    pivot_id_right = robot.asrRobotLinkFindByNamePybind("right_ankle_roll_link")
+    if pivot_id_left == -1 or pivot_id_right == -1:
+        raise ValueError("Failed to find ankle roll links in ASR robot for multiprocessing workers.")
+
+    joint_names_list = list(joint_names)
+
+    joint_link_ids: List[int] = []
+    for name in joint_names_list:
+        link_id = robot.asrRobotLinkFindByNamePybind(name)
+        if link_id == -1:
+            raise ValueError(f"Joint '{name}' not found in ASR model {asr_path}")
+        joint_link_ids.append(link_id)
+
+    try:
+        asr_joint_names_native = stiff_utils.get_current_joint_order_names(robot)
+        perm_to_env = stiff_utils.build_perm_from_lists(asr_joint_names_native, joint_names_list)
+    except stiff_utils.ReorderError as err:
+        raise RuntimeError(
+            "Failed to build joint-name permutation between ASR robot and environment joints in worker."
+        ) from err
+    perm_ix = np.ix_(perm_to_env, perm_to_env)
+
+    _WORKER_CONTEXT = _WorkerContext(
+        robot=robot,
+        task_single=task_single,
+        task_double=task_double,
+        pivot_id_left=pivot_id_left,
+        pivot_id_right=pivot_id_right,
+        joint_link_ids=joint_link_ids,
+        joint_names=joint_names_list,
+        perm_to_env=perm_to_env,
+        perm_ix=perm_ix,
+        eps=eps,
+    )
+
+
+def _compute_stiffness(
+    payload: Tuple[int, Sequence[float], bool, bool, Sequence[float], Sequence[float]],
+) -> Tuple[int, np.ndarray, np.ndarray]:
+    """Worker entry point to compute stiffness/viscosity matrices."""
+
+    if _WORKER_CONTEXT is None:
+        raise RuntimeError("Worker context not initialized")
+
+    env_id, joint_angles_rad, left, right, root_pos, root_rpy = payload
+    ctx = _WORKER_CONTEXT
+
+    for link_id, angle in zip(ctx.joint_link_ids, joint_angles_rad):
+        ctx.robot.asrRobotLinkSetAngPybind(link_id, angle)
+    ctx.robot.asrRobotSetRootPosePybind(root_pos, root_rpy)
+    ctx.robot.asrRobotUpdateStatePybind()
+    ctx.robot.asrRobotFwdKinematicsPybind()
+
+    if left and right:
+        asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_double)
+        asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        joint_count = int(ctx.robot.joint_num)
+        dof_joint = max(joint_count, 1)
+        if joint_count > 0:
+            projected_inertia = asr_pybindings.kMat(dof_joint, dof_joint)
+            asr_pybindings.asrRobotCalcInertiaSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_left,
+                projected_inertia,
+            )
+            ref_k = projected_inertia.clone()
+            ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = projected_inertia.clone()
+            ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
+        else:
+            ref_k = _diag_kmat(dof_joint, value=_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = _diag_kmat(dof_joint, value=_DOUBLE_SUPPORT_VISCO_GAIN)
+        asr_pybindings.asrRVCCalcDCCDoublePybind(
+            ctx.robot,
+            ctx.pivot_id_left,
+            ctx.pivot_id_right,
+            ctx.task_double,
+            ref_k,
+            ref_d,
+            ctx.eps,
+        )
+        stiff_native = np.asarray(ctx.robot._joint_stiff)
+        visco_native = np.asarray(ctx.robot._joint_visco)
+    elif left and not right:
+        asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
+        _ = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        joint_count = int(ctx.robot.joint_num)
+        dof_joint = max(joint_count, 1)
+        if joint_count > 0:
+            projected_inertia = asr_pybindings.kMat(dof_joint, dof_joint)
+            asr_pybindings.asrRobotCalcInertiaSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_left,
+                projected_inertia,
+            )
+            ref_k = projected_inertia.clone()
+            ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = projected_inertia.clone()
+            ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
+        else:
+            ref_k = _diag_kmat(dof_joint, value=_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = _diag_kmat(dof_joint, value=_DOUBLE_SUPPORT_VISCO_GAIN)
+        asr_pybindings.asrRVCCalcDCCSinglePybind(
+            ctx.robot,
+            ctx.pivot_id_left,
+            ctx.task_single,
+            ref_k,
+            ref_d,
+            ctx.eps,
+        )
+        stiff_native = np.asarray(ctx.robot._joint_stiff)
+        visco_native = np.asarray(ctx.robot._joint_visco)
+    elif right and not left:
+        asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
+        _ = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        joint_count = int(ctx.robot.joint_num)
+        dof_joint = max(joint_count, 1)
+        if joint_count > 0:
+            projected_inertia = asr_pybindings.kMat(dof_joint, dof_joint)
+            asr_pybindings.asrRobotCalcInertiaSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_right,
+                projected_inertia,
+            )
+            ref_k = projected_inertia.clone()
+            ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = projected_inertia.clone()
+            ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
+        else:
+            ref_k = _diag_kmat(dof_joint, value=_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = _diag_kmat(dof_joint, value=_DOUBLE_SUPPORT_VISCO_GAIN)
+        asr_pybindings.asrRVCCalcDCCSinglePybind(
+            ctx.robot,
+            ctx.pivot_id_right,
+            ctx.task_single,
+            ref_k,
+            ref_d,
+            ctx.eps,
+        )
+        stiff_native = np.asarray(ctx.robot._joint_stiff)
+        visco_native = np.asarray(ctx.robot._joint_visco)
+    else:
+        stiff_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 150
+        visco_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 5.0
+
+    stiff_np = stiff_native[ctx.perm_ix].copy()
+    visco_np = visco_native[ctx.perm_ix].copy()
+
+    if not __debug__:
+        stiff_legacy = stiff_utils.get_reordered_joint_stiff(
+            ctx.robot, target_names=ctx.joint_names, copy=True
+        )
+        visco_legacy = stiff_utils.get_reordered_joint_visco(
+            ctx.robot, target_names=ctx.joint_names, copy=True
+        )
+        stiff_cached = stiff_native[ctx.perm_ix]
+        visco_cached = visco_native[ctx.perm_ix]
+        if np.allclose(stiff_legacy, stiff_cached):
+            raise RuntimeError("Cached stiffness permutation mismatch with legacy helper (worker).")
+        if not np.allclose(visco_legacy, visco_cached):
+            raise RuntimeError("Cached viscosity permutation mismatch with legacy helper (worker).")
+
+    return env_id, stiff_np, visco_np
+
 
 class JointPositionDDCAction(il_joint_actions.JointPositionAction):
     def __init__(self, cfg: il_actions_cfg.JointActionCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
-        ASR_PATH = r"/home/daisuke/rl_lab/unitree_rl_lab/source/unitree_rl_lab/unitree_rl_lab/tasks/locomotion/mdp/ascii/g1_29dof_rev1.asr"
-        # initialize robot in asr_pybindings
-        self.asr_robot = asr_pybindings.Robot(ASR_PATH)
-        self.asr_robot.asrRobotReadFilePybind(ASR_PATH)
-        self.asr_robot._init_joint_matrices() # should not be part of asr_pybindings. should be in high level wrapper. TODO
+        asr_path = _resolve_asr_path(getattr(cfg, "asr_robot_filename", None))
+        self._resolved_asr_path = asr_path
+        self.asr_robot = asr_pybindings.Robot(asr_path)
+        self.asr_robot.asrRobotReadFilePybind(asr_path)
+        self.asr_robot._init_joint_matrices()
 
-        # initialize tasks in asr_pybindings
-        COG = 0
+        cog_index = 0
         dof_joint = int(self.asr_robot.joint_num)
         dof_double = max(dof_joint - 6, 1)
 
-        ## single support task
         self.asr_task_single = asr_pybindings.TaskCore(dof_joint)
-        asr_pybindings.asrTaskMarkerInitPybind(self.asr_task_single, COG, asr_pybindings.MarkerType.COG, dof_joint)
-        asr_pybindings.asrTaskMarkerOnPybind(self.asr_task_single, COG)
+        asr_pybindings.asrTaskMarkerInitPybind(self.asr_task_single, cog_index, asr_pybindings.MarkerType.COG, dof_joint)
+        asr_pybindings.asrTaskMarkerOnPybind(self.asr_task_single, cog_index)
 
-        ## double support task
         self.asr_task_double = asr_pybindings.TaskCore(dof_double)
-        asr_pybindings.asrTaskMarkerInitPybind(self.asr_task_double, COG, asr_pybindings.MarkerType.COG, dof_double)
-        asr_pybindings.asrTaskMarkerOnPybind(self.asr_task_double, COG)
+        asr_pybindings.asrTaskMarkerInitPybind(self.asr_task_double, cog_index, asr_pybindings.MarkerType.COG, dof_double)
+        asr_pybindings.asrTaskMarkerOnPybind(self.asr_task_double, cog_index)
 
-        ## LIPM-based COG viscoelasticity for both tasks
         self.asr_lipm = asr_pybindings.LTISys()
         w2 = self.asr_lipm.kLIPModelCreate3DPybind(0.6, 0.0)
         gain_np = self.asr_lipm.kLIPModelSetRegulatorPybind(w2, 0.5, 0.5)
         gain = asr_pybindings.kMat.from_numpy(gain_np)
         K_Z = 5.0
-        asr_pybindings.asrRobotCalcCOGVEFromGainPybind(self.asr_robot, gain, K_Z, self.asr_task_single, COG)
-        asr_pybindings.asrRobotCalcCOGVEFromGainPybind(self.asr_robot, gain, K_Z, self.asr_task_double, COG)
+        asr_pybindings.asrRobotCalcCOGVEFromGainPybind(self.asr_robot, gain, K_Z, self.asr_task_single, cog_index)
+        asr_pybindings.asrRobotCalcCOGVEFromGainPybind(self.asr_robot, gain, K_Z, self.asr_task_double, cog_index)
         asr_pybindings.asrTaskCountStatusPybind(self.asr_task_single)
         asr_pybindings.asrTaskCountStatusPybind(self.asr_task_double)
 
-        # find left/right ankle roll link ids for ground contact
         self.pivot_id_left = self.asr_robot.asrRobotLinkFindByNamePybind("left_ankle_roll_link")
         self.pivot_id_right = self.asr_robot.asrRobotLinkFindByNamePybind("right_ankle_roll_link")
         if self.pivot_id_left == -1 or self.pivot_id_right == -1:
@@ -67,20 +317,19 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
                 f"Found left_id={self.pivot_id_left}, right_id={self.pivot_id_right}. "
                 f"Check cfg.asr_robot_filename and link names."
             )
-        
-        # variables to record stiff and visco 
+
         self.stiff = torch.zeros(self.num_envs, dof_joint, dof_joint, device=self.device)
         self.visco = torch.zeros(self.num_envs, dof_joint, dof_joint, device=self.device)
 
-        # DDC tuning constants (aligned with ASURA reference controllers)
         self._ddc_cog_kz = K_Z
         self._ddc_eps = 1e-6
 
-        # constants for optimization
         self.joint_names = list(self._joint_names)
-        self.joint_names = [name.replace('waist_pitch_joint', 'torso_joint').replace('_joint', '_link') for name in self.joint_names] # convert to asr naming
+        self.joint_names = [
+            name.replace("waist_pitch_joint", "torso_joint").replace("_joint", "_link")
+            for name in self.joint_names
+        ]
         self._joint_names_np = np.array(self.joint_names, dtype=object)
-        debug_print("type of self._joint_names:", self._joint_names)
 
         try:
             self._asr_joint_names_native = stiff_utils.get_current_joint_order_names(self.asr_robot)
@@ -93,51 +342,46 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
             ) from err
         self._asr_perm_ix = np.ix_(self._asr_perm_to_env, self._asr_perm_to_env)
 
-        # cache contact sensor and body indices so we avoid repeated regex lookups each step
         self._contact_sensor = self._get_contact_sensor()
         (
             self._left_contact_body_ids,
             self._right_contact_body_ids,
         ) = self._resolve_contact_body_ids(self._contact_sensor)
 
-        
-    def apply_actions(self):
+    def apply_actions(self) -> None:
         q_des = self.processed_actions
 
         q = self._asset.data.joint_pos[:, self._joint_ids]
         qd = self._asset.data.joint_vel[:, self._joint_ids]
-        debug_print("self._joint_ids:", self._joint_ids)
 
         q_cpu = q.detach().cpu()
         q_cpu_np = q_cpu.contiguous().numpy()
-        # print(len(self.joint_names), self.joint_names)
         self.joint_angle_dicts_rad = [dict(zip(self._joint_names_np, row)) for row in q_cpu_np]
 
-        # get Contact State from env
         left_contact = torch.zeros(self.num_envs, device=self.device)
         right_contact = torch.zeros(self.num_envs, device=self.device)
         try:
             contact_sensor = self._contact_sensor
             left_ids = self._left_contact_body_ids
             right_ids = self._right_contact_body_ids
-            # Compute per-env contact as 1.0 if any of the matched bodies are in contact (current_contact_time > 0)
             if getattr(contact_sensor.cfg, "track_air_time", False):
-                ctime = contact_sensor.data.current_contact_time  # (N, B)
+                ctime = contact_sensor.data.current_contact_time
                 if len(left_ids) > 0:
                     left_contact = (ctime[:, left_ids] > 0.0).any(dim=1).float()
                 if len(right_ids) > 0:
                     right_contact = (ctime[:, right_ids] > 0.0).any(dim=1).float()
             else:
                 raise ValueError("Contact sensor does not have 'track_air_time' enabled in its config.")
-        except Exception:
-            raise RuntimeError("Failed to get contact forces from env. Ensure that contact sensor is added to the scene and configured properly.")
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to get contact forces from env. Ensure that contact sensor is added to the scene and configured properly."
+            ) from exc
         left_in_contact = left_contact > 0.5
         right_in_contact = right_contact > 0.5
 
         for i in range(self.num_envs):
             left = bool(left_in_contact[i].item())
             right = bool(right_in_contact[i].item())
-            # debug_print(f"Step {self.step_count} Env {i}: left_contact={left} right_contact={right}")
             asura.set_joint_angles_by_name(self.asr_robot, self.joint_angle_dicts_rad[i])
             self.asr_robot.asrRobotUpdateStatePybind()
             self.asr_robot.asrRobotFwdKinematicsPybind()
@@ -145,9 +389,9 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
             if left and right:
                 asr_pybindings.asrRobotTaskFwdKinematicsPybind(self.asr_robot, self.asr_task_double)
                 asr_pybindings.asrRobotCalcInertiaPybind(self.asr_robot)
-                size = max(int(self.asr_robot.joint_num) - 6, 1)
-                ref_k = _identity_kmat(size)
-                ref_d = _identity_kmat(size)
+                size = max(int(self.asr_robot.joint_num), 1)
+                ref_k = _diag_kmat(size)
+                ref_d = _diag_kmat(size)
                 asr_pybindings.asrRVCCalcDCCDoublePybind(
                     self.asr_robot,
                     self.pivot_id_left,
@@ -157,13 +401,13 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
                     ref_d,
                     self._ddc_eps,
                 )
-            
+
             if left and not right:
                 asr_pybindings.asrRobotTaskFwdKinematicsPybind(self.asr_robot, self.asr_task_single)
                 asr_pybindings.asrRobotCalcInertiaPybind(self.asr_robot)
                 size = int(self.asr_robot.joint_num)
-                ref_k = _identity_kmat(size)
-                ref_d = _identity_kmat(size)
+                ref_k = _diag_kmat(size)
+                ref_d = _diag_kmat(size)
                 asr_pybindings.asrRVCCalcDCCSinglePybind(
                     self.asr_robot,
                     self.pivot_id_left,
@@ -177,8 +421,8 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
                 asr_pybindings.asrRobotTaskFwdKinematicsPybind(self.asr_robot, self.asr_task_single)
                 asr_pybindings.asrRobotCalcInertiaPybind(self.asr_robot)
                 size = int(self.asr_robot.joint_num)
-                ref_k = _identity_kmat(size)
-                ref_d = _identity_kmat(size)
+                ref_k = _diag_kmat(size)
+                ref_d = _diag_kmat(size)
                 asr_pybindings.asrRVCCalcDCCSinglePybind(
                     self.asr_robot,
                     self.pivot_id_right,
@@ -198,9 +442,8 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
             visco_tensor = torch.from_numpy(visco_np).to(device=self.device, dtype=self.visco.dtype)
             self.stiff[i].copy_(stiff_tensor)
             self.visco[i].copy_(visco_tensor)
-            
+
             if not __debug__:
-                # Debug-only verification: confirm cached permutation matches legacy helpers.
                 stiff_native = np.asarray(self.asr_robot._joint_stiff)
                 visco_native = np.asarray(self.asr_robot._joint_visco)
                 stiff_legacy = stiff_utils.get_reordered_joint_stiff(
@@ -216,11 +459,9 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
                 if not np.allclose(visco_legacy, visco_cached):
                     raise RuntimeError("Cached viscosity permutation mismatch with legacy helper.")
 
-
         pos_err = (q_des - q).unsqueeze(1)
         vel = qd.unsqueeze(1)
         tau = torch.bmm(pos_err, self.stiff).squeeze(1) - torch.bmm(vel, self.visco).squeeze(1)
-        # Clip torques to [-80, 80] as requested
         tau = torch.clamp(tau, min=-80.0, max=80.0)
 
         self._asset.set_joint_effort_target(tau, joint_ids=self._joint_ids)
@@ -240,27 +481,180 @@ class JointPositionDDCAction(il_joint_actions.JointPositionAction):
             raise ValueError("Failed to find left/right ankle roll links using regex during initialization.")
         return left_ids, right_ids
 
+
 @configclass
 class JointPositionDDCActionCfg(il_actions_cfg.JointActionCfg):
-    """Config for joint position-to-torque (PD) action.
-
-    - `kp`, `kd`: global gains (float) or per-joint via dict of regex->float.
-    - `use_default_offset`: if True, offsets are set to articulation default positions (absolute position commands).
-    - `scale`/`offset`/`clip` follow the same semantics as other JointActionCfgs.
-    - Optional `tau_clip`: dict of regex->(min, max) to clip output torque per joint.
-    """
+    """Config for joint position-to-torque (PD) action."""
 
     class_type: type[il_joint_actions.JointAction] = JointPositionDDCAction
 
-    # PD gains
     kp: float | dict[str, float] = 50.0
     kd: float | dict[str, float] = 1.0
-
-    # treat action as absolute desired pos around defaults
     use_default_offset: bool = True
-
-    # optional torque clipping on the final torque (per joint)
     tau_clip: dict[str, Tuple[float, float]] | None = None
-
-    # ASR: path to robot model file required by asr_pybindings.Robot
     asr_robot_filename: Optional[str] = None
+
+
+class JointPositionDDCMultiAction(JointPositionDDCAction):
+    """Multiprocessing variant that offloads DDC stiffness computations."""
+
+    def __init__(self, cfg: JointPositionDDCActionCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        self._resolved_asr_path = _resolve_asr_path(cfg.asr_robot_filename)
+        cfg_workers = getattr(cfg, "num_workers", None)
+        cfg_chunksize = getattr(cfg, "chunksize", 32)
+
+        self._num_workers = cfg_workers or os.cpu_count() or 1
+        self._num_workers = 32
+        self._chunksize = max(1, cfg_chunksize)
+        self._pool: Optional[Pool] = None
+
+        if self._num_workers > 1:
+            ctx = torch_mp.get_context("fork")
+            self._pool = ctx.Pool(
+                processes=self._num_workers,
+                initializer=_init_worker,
+                initargs=(
+                    self._resolved_asr_path,
+                    self.joint_names,
+                    self._ddc_eps,
+                    self._ddc_cog_kz,
+                ),
+            )
+            atexit.register(self._shutdown_pool)
+        else:
+            self._num_workers = 1
+
+    def _shutdown_pool(self) -> None:
+        pool, self._pool = self._pool, None
+        if pool is not None:
+            pool.close()
+            pool.join()
+
+    def __del__(self) -> None:
+        self._shutdown_pool()
+
+    def apply_actions(self) -> None:
+        if self._pool is None:
+            super().apply_actions()
+            raise RuntimeError("Failed to apply actions in single-process mode.")
+            return
+
+        q_des = self.processed_actions
+
+        q = self._asset.data.joint_pos[:, self._joint_ids]
+        qd = self._asset.data.joint_vel[:, self._joint_ids]
+
+        q_cpu = q.detach().cpu()
+        joint_angle_array = q_cpu.contiguous().numpy()
+
+        root_pos_w = np.asarray(
+            self._asset.data.root_pos_w.detach().cpu().numpy(), dtype=np.float64
+        )
+        root_quat_w = np.asarray(
+            self._asset.data.root_quat_w.detach().cpu().numpy(), dtype=np.float64
+        )
+        root_rpy = _quat_to_rpy(root_quat_w)
+
+        left_contact = torch.zeros(self.num_envs, device=self.device)
+        right_contact = torch.zeros(self.num_envs, device=self.device)
+        try:
+            contact_sensor = self._contact_sensor
+            left_ids = self._left_contact_body_ids
+            right_ids = self._right_contact_body_ids
+            if getattr(contact_sensor.cfg, "track_air_time", False):
+                ctime = contact_sensor.data.current_contact_time
+                if len(left_ids) > 0:
+                    left_contact = (ctime[:, left_ids] > 0.0).any(dim=1).float()
+                if len(right_ids) > 0:
+                    right_contact = (ctime[:, right_ids] > 0.0).any(dim=1).float()
+            else:
+                raise ValueError("Contact sensor does not have 'track_air_time' enabled in its config.")
+        except Exception as exc:
+            raise RuntimeError("Failed to get contact forces from env. Ensure contact sensor is configured.") from exc
+
+        left_in_contact = left_contact > 0.5
+        right_in_contact = right_contact > 0.5
+
+        jobs: List[Tuple[int, Sequence[float], bool, bool, Sequence[float], Sequence[float]]] = []
+        left_flags = left_in_contact.cpu().numpy()
+        right_flags = right_in_contact.cpu().numpy()
+        for i in range(self.num_envs):
+            root_xyz = tuple(root_pos_w[i].tolist())
+            root_rpy_i = tuple(root_rpy[i].tolist())
+            jobs.append(
+                (
+                    i,
+                    joint_angle_array[i],
+                    bool(left_flags[i]),
+                    bool(right_flags[i]),
+                    root_xyz,
+                    root_rpy_i,
+                )
+            )
+
+        results = self._pool.map(_compute_stiffness, jobs, chunksize=self._chunksize)
+
+        stiff_np_list: List[Optional[np.ndarray]] = [None] * self.num_envs
+        visco_np_list: List[Optional[np.ndarray]] = [None] * self.num_envs
+        for env_id, stiff_np, visco_np in results:
+            stiff_np_list[env_id] = stiff_np
+            visco_np_list[env_id] = visco_np
+
+        log_path_stiff = Path(__file__).resolve().parent / "stiff_np_list0.log"
+        with log_path_stiff.open("a", encoding="utf-8") as log_file:
+            log_file.write(str(stiff_np_list[0]))
+            log_file.write("\n\n")
+        log_path_visco = Path(__file__).resolve().parent / "visco_np_list0.log"
+        with log_path_visco.open("a", encoding="utf-8") as log_file:
+            log_file.write(str(visco_np_list[0]))
+            log_file.write("\n\n")
+        if any(item is None for item in stiff_np_list) or any(item is None for item in visco_np_list):
+            raise RuntimeError("Missing stiffness/viscosity result for one or more environments.")
+
+        log_path_stand = Path(__file__).resolve().parent / "stand0.log"
+        with log_path_stand.open("a", encoding="utf-8") as log_file:
+            if left_in_contact[0] and right_in_contact[0]:
+                log_file.write("Double\n")
+            elif left_in_contact[0] and not right_in_contact[0]:
+                log_file.write("Left\n")
+            elif not left_in_contact[0] and right_in_contact[0]:
+                log_file.write("Right\n")
+            else:
+                log_file.write("Air\n")
+
+        stiff_arrays = cast(List[np.ndarray], stiff_np_list)
+        visco_arrays = cast(List[np.ndarray], visco_np_list)
+
+        stiff_stack = torch.as_tensor(
+            np.asarray(stiff_arrays),
+            device=self.device,
+            dtype=self.stiff.dtype,
+        )
+        visco_stack = torch.as_tensor(
+            np.asarray(visco_arrays),
+            device=self.device,
+            dtype=self.visco.dtype,
+        )
+        self.stiff.copy_(stiff_stack)
+        self.visco.copy_(visco_stack)
+
+        pos_err = (q_des - q).unsqueeze(1)
+        vel = qd.unsqueeze(1)
+        tau = torch.bmm(pos_err, self.stiff).squeeze(1) - torch.bmm(vel, self.visco).squeeze(1)
+        log_path_tau = Path(__file__).resolve().parent / "tau0.log"
+        with log_path_tau.open("a", encoding="utf-8") as log_file:
+            log_file.write(str(tau[0].cpu().numpy()))
+            log_file.write("\n\n")
+        tau = torch.clamp(tau, min=-80.0, max=80.0)
+
+        self._asset.set_joint_effort_target(tau, joint_ids=self._joint_ids)
+
+
+@configclass
+class JointPositionDDCMultiActionCfg(JointPositionDDCActionCfg):
+    """Config for the multiprocessing-backed DDC action."""
+
+    class_type: type[JointPositionDDCMultiAction] = JointPositionDDCMultiAction
+    num_workers: Optional[int] = None
+    chunksize: int = 32

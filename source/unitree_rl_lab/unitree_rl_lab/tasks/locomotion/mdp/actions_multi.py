@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from multiprocessing.pool import Pool
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, cast
+import math
 
 import numpy as np
 import torch
@@ -14,6 +15,10 @@ from isaaclab.utils import configclass
 
 from . import asr_pybindings, stiff_utils
 from .actions import JointPositionDDCAction, JointPositionDDCActionCfg
+
+
+_DOUBLE_SUPPORT_STIFF_GAIN = 10.0
+_DOUBLE_SUPPORT_VISCO_GAIN = math.sqrt(_DOUBLE_SUPPORT_STIFF_GAIN) * 2.0
 
 
 @dataclass
@@ -35,10 +40,33 @@ class _WorkerContext:
 _WORKER_CONTEXT: Optional[_WorkerContext] = None
 
 
-def _identity_kmat(size: int) -> "asr_pybindings.kMat":
-    """Return an identity matrix wrapped in `kMat`."""
+def _diag_kmat(size: int, *, value: float = 20) -> "asr_pybindings.kMat":
+    """Return a diagonal matrix with `value` on the diagonal wrapped in `kMat`."""
 
-    return asr_pybindings.kMat.from_numpy(np.eye(size, dtype=np.float64))
+    return asr_pybindings.kMat.from_numpy(np.eye(size, dtype=np.float64) * value)
+
+
+def _quat_to_rpy(quat_xyzw: np.ndarray) -> np.ndarray:
+    """Convert XYZW quaternions to roll, pitch, yaw (radians)."""
+
+    quat = np.asarray(quat_xyzw, dtype=np.float64)
+    x = quat[..., 0]
+    y = quat[..., 1]
+    z = quat[..., 2]
+    w = quat[..., 3]
+
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    sinp = 2.0 * (w * y - z * x)
+    pitch = np.arcsin(np.clip(sinp, -1.0, 1.0))
+
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    return np.stack((roll, pitch, yaw), axis=-1)
 
 
 def _resolve_asr_path(filename: Optional[str]) -> str:
@@ -76,7 +104,7 @@ def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: 
     w2 = lipm.kLIPModelCreate3DPybind(0.88, 0.0)
     gain_np = lipm.kLIPModelSetRegulatorPybind(w2, 0.5, 0.5)
     gain = asr_pybindings.kMat.from_numpy(gain_np)
-    k_z = cog_kz
+    k_z = 50000
     asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_single, cog_index)
     asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_double, cog_index)
     asr_pybindings.asrTaskCountStatusPybind(task_single)
@@ -121,25 +149,43 @@ def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: 
     )
 
 
-def _compute_stiffness(payload: Tuple[int, Sequence[float], bool, bool]) -> Tuple[int, np.ndarray, np.ndarray]:
+def _compute_stiffness(
+    payload: Tuple[
+        int,
+        Sequence[float],
+        bool,
+        bool,
+        Sequence[float],
+        Sequence[float],
+    ]
+) -> Tuple[int, np.ndarray, np.ndarray]:
     """Worker entry point to compute stiffness/viscosity matrices."""
     if _WORKER_CONTEXT is None:
         raise RuntimeError("Worker context not initialized")
 
-    env_id, joint_angles_rad, left, right = payload
+    env_id, joint_angles_rad, left, right, root_pos, root_rpy = payload
     ctx = _WORKER_CONTEXT
+    joint_count = int(ctx.robot.joint_num)
 
     for link_id, angle in zip(ctx.joint_link_ids, joint_angles_rad):
         ctx.robot.asrRobotLinkSetAngPybind(link_id, angle)
+    ctx.robot.asrRobotSetRootPosePybind(root_pos, root_rpy)
     ctx.robot.asrRobotUpdateStatePybind()
     ctx.robot.asrRobotFwdKinematicsPybind()
 
     if left and right:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_double)
         asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
-        size = max(int(ctx.robot.joint_num) - 6, 1)
-        ref_k = _identity_kmat(size)
-        ref_d = _identity_kmat(size)
+        projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
+        asr_pybindings.asrRobotCalcInertiaSinglePybind(
+            ctx.robot,
+            ctx.pivot_id_left,
+            projected_inertia,
+        )
+        ref_k = projected_inertia.clone()
+        ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+        ref_d = projected_inertia.clone()
+        ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
         asr_pybindings.asrRVCCalcDCCDoublePybind(
             ctx.robot,
             ctx.pivot_id_left,
@@ -149,12 +195,21 @@ def _compute_stiffness(payload: Tuple[int, Sequence[float], bool, bool]) -> Tupl
             ref_d,
             ctx.eps,
         )
+        stiff_native = np.asarray(ctx.robot._joint_stiff)
+        visco_native = np.asarray(ctx.robot._joint_visco)
     elif left and not right:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
-        asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
-        size = int(ctx.robot.joint_num)
-        ref_k = _identity_kmat(size)
-        ref_d = _identity_kmat(size)
+        _ = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
+        asr_pybindings.asrRobotCalcInertiaSinglePybind(
+            ctx.robot,
+            ctx.pivot_id_left,
+            projected_inertia,
+        )
+        ref_k = projected_inertia.clone()
+        ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+        ref_d = projected_inertia.clone()
+        ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
         asr_pybindings.asrRVCCalcDCCSinglePybind(
             ctx.robot,
             ctx.pivot_id_left,
@@ -163,12 +218,21 @@ def _compute_stiffness(payload: Tuple[int, Sequence[float], bool, bool]) -> Tupl
             ref_d,
             ctx.eps,
         )
+        stiff_native = np.asarray(ctx.robot._joint_stiff)
+        visco_native = np.asarray(ctx.robot._joint_visco)
     elif right and not left:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
-        asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
-        size = int(ctx.robot.joint_num)
-        ref_k = _identity_kmat(size)
-        ref_d = _identity_kmat(size)
+        _ = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+        projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
+        asr_pybindings.asrRobotCalcInertiaSinglePybind(
+            ctx.robot,
+            ctx.pivot_id_right,
+            projected_inertia,
+        )
+        ref_k = projected_inertia.clone()
+        ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+        ref_d = projected_inertia.clone()
+        ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
         asr_pybindings.asrRVCCalcDCCSinglePybind(
             ctx.robot,
             ctx.pivot_id_right,
@@ -177,26 +241,14 @@ def _compute_stiffness(payload: Tuple[int, Sequence[float], bool, bool]) -> Tupl
             ref_d,
             ctx.eps,
         )
-    # If both feet are in the air, keep the previous stiffness/viscosity matrices.
+        stiff_native = np.asarray(ctx.robot._joint_stiff)
+        visco_native = np.asarray(ctx.robot._joint_visco)
+    else:
+        stiff_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 150
+        visco_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 5.0
 
-    stiff_native = np.asarray(ctx.robot._joint_stiff)
-    visco_native = np.asarray(ctx.robot._joint_visco)
     stiff_np = stiff_native[ctx.perm_ix].copy()
     visco_np = visco_native[ctx.perm_ix].copy()
-
-    if not __debug__:
-        stiff_legacy = stiff_utils.get_reordered_joint_stiff(
-            ctx.robot, target_names=ctx.joint_names, copy=True
-        )
-        visco_legacy = stiff_utils.get_reordered_joint_visco(
-            ctx.robot, target_names=ctx.joint_names, copy=True
-        )
-        stiff_cached = stiff_native[ctx.perm_ix]
-        visco_cached = visco_native[ctx.perm_ix]
-        if np.allclose(stiff_legacy, stiff_cached):
-            raise RuntimeError("Cached stiffness permutation mismatch with legacy helper (worker).")
-        if not np.allclose(visco_legacy, visco_cached):
-            raise RuntimeError("Cached viscosity permutation mismatch with legacy helper (worker).")
 
     return env_id, stiff_np, visco_np
 
@@ -210,8 +262,7 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
         cfg_workers = getattr(cfg, "num_workers", None)
         cfg_chunksize = getattr(cfg, "chunksize", 32)
 
-        self._num_workers = cfg_workers or os.cpu_count() or 1
-        self._num_workers = 32#max(1, min(self._num_workers, self.num_envs))
+        self._num_workers = 32
         self._chunksize = max(1, cfg_chunksize)
         self._pool: Optional[Pool] = None
 
@@ -243,6 +294,7 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
     def apply_actions(self) -> None:
         if self._pool is None:
             super().apply_actions()
+            raise RuntimeError("Failed to apply actions in single-process mode.")
             return
 
         q_des = self.processed_actions
@@ -251,6 +303,14 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
 
         q_cpu = q.detach().cpu()
         joint_angle_array = q_cpu.contiguous().numpy()
+
+        root_pos_w = np.asarray(
+            self._asset.data.root_pos_w.detach().cpu().numpy(), dtype=np.float64
+        )
+        root_quat_w = np.asarray(
+            self._asset.data.root_quat_w.detach().cpu().numpy(), dtype=np.float64
+        )
+        root_rpy = _quat_to_rpy(root_quat_w)
 
         left_contact = torch.zeros(self.num_envs, device=self.device)
         right_contact = torch.zeros(self.num_envs, device=self.device)
@@ -272,16 +332,20 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
         left_in_contact = left_contact > 0.5
         right_in_contact = right_contact > 0.5
 
-        jobs: List[Tuple[int, Sequence[float], bool, bool]] = []
+        jobs: List[Tuple[int, Sequence[float], bool, bool, Sequence[float], Sequence[float]]] = []
         left_flags = left_in_contact.cpu().numpy()
         right_flags = right_in_contact.cpu().numpy()
         for i in range(self.num_envs):
+            root_xyz = tuple(root_pos_w[i].tolist())
+            root_rpy_i = tuple(root_rpy[i].tolist())
             jobs.append(
                 (
                     i,
                     joint_angle_array[i],
                     bool(left_flags[i]),
                     bool(right_flags[i]),
+                    root_xyz,
+                    root_rpy_i,
                 )
             )
 
@@ -293,16 +357,27 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
             stiff_np_list[env_id] = stiff_np
             visco_np_list[env_id] = visco_np
 
-        # log_path_stiff = Path(__file__).resolve().parent / "stiff_np_list0.log"
-        # with log_path_stiff.open("a", encoding="utf-8") as log_file:
-        #     log_file.write(str(stiff_np_list[0]))
-        #     log_file.write("\n\n")
-        # log_path_visco = Path(__file__).resolve().parent / "visco_np_list0.log"
-        # with log_path_visco.open("a", encoding="utf-8") as log_file:
-        #     log_file.write(str(visco_np_list[0]))
-        #     log_file.write("\n\n")
+        log_path_stiff = Path(__file__).resolve().parent / "stiff_np_list0.log"
+        with log_path_stiff.open("a", encoding="utf-8") as log_file:
+            log_file.write(str(stiff_np_list[0]))
+            log_file.write("\n\n")
+        log_path_visco = Path(__file__).resolve().parent / "visco_np_list0.log"
+        with log_path_visco.open("a", encoding="utf-8") as log_file:
+            log_file.write(str(visco_np_list[0]))
+            log_file.write("\n\n")
         if any(item is None for item in stiff_np_list) or any(item is None for item in visco_np_list):
             raise RuntimeError("Missing stiffness/viscosity result for one or more environments.")
+
+        log_path_stand = Path(__file__).resolve().parent / "stand0.log"
+        with log_path_stand.open("a", encoding="utf-8") as log_file:
+            if left_in_contact[0] and right_in_contact[0]:
+                log_file.write("Double\n")
+            elif left_in_contact[0] and not right_in_contact[0]:
+                log_file.write("Left\n")
+            elif not left_in_contact[0] and right_in_contact[0]:
+                log_file.write("Right\n")
+            else:
+                log_file.write("Air\n")
 
         stiff_arrays = cast(List[np.ndarray], stiff_np_list)
         visco_arrays = cast(List[np.ndarray], visco_np_list)
