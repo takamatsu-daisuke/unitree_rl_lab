@@ -17,7 +17,7 @@ from . import asr_pybindings, stiff_utils
 from .actions import JointPositionDDCAction, JointPositionDDCActionCfg
 
 
-_DOUBLE_SUPPORT_STIFF_GAIN = 200.0
+_DOUBLE_SUPPORT_STIFF_GAIN = 32.0
 _DOUBLE_SUPPORT_VISCO_GAIN = math.sqrt(_DOUBLE_SUPPORT_STIFF_GAIN) * 2.0
 _DEBUG_PRINT = False
 
@@ -39,7 +39,7 @@ class _WorkerContext:
 
 _WORKER_CONTEXT: Optional[_WorkerContext] = None
 _COG_GAIN_LOG_PATH = Path(__file__).resolve().parent / "cog_gain.log"
-_COG_GAIN_PRINTED = False
+_COG_GAIN_PRINTED = True
 
 
 def _diag_kmat(size: int, *, value: float = 20) -> "asr_pybindings.kMat":
@@ -116,7 +116,7 @@ def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: 
     w2 = lipm.kLIPModelCreate3DPybind(0.88, 0.0)
     gain_np = lipm.kLIPModelSetRegulatorPybind(w2, 0.5, 0.5)
     gain = asr_pybindings.kMat.from_numpy(gain_np)
-    k_z = 50000
+    k_z = 500
     asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_single, cog_index)
     asr_pybindings.asrRobotCalcCOGVEFromGainPybind(robot, gain, k_z, task_double, cog_index)
     asr_pybindings.asrTaskCountStatusPybind(task_single)
@@ -124,11 +124,25 @@ def _init_worker(asr_path: str, joint_names: Sequence[str], eps: float, cog_kz: 
 
     if _DEBUG_PRINT:
         gain_np = gain.to_numpy()
+        gain_str = _format_matrix_full(gain_np)
         with _COG_GAIN_LOG_PATH.open("a", encoding="utf-8") as log_file:
-            log_file.write(_format_matrix_full(gain_np))
+            log_file.write("asrRobotCalcCOGVEFromGainPybind gain matrix:\n")
+            log_file.write(gain_str)
+            log_file.write("\n\n")
+        cog_stiff_single = asr_pybindings.asrTaskMarkerGetStiffPybind(task_single, cog_index)
+        log_path_cog_single = Path(__file__).resolve().parent / "cog_marker_single.log"
+        with log_path_cog_single.open("a", encoding="utf-8") as log_file:
+            log_file.write("COG marker stiffness (single support):\n")
+            log_file.write(_format_matrix_full(cog_stiff_single))
+            log_file.write("\n\n")
+        cog_stiff_double = asr_pybindings.asrTaskMarkerGetStiffPybind(task_double, cog_index)
+        log_path_cog_double = Path(__file__).resolve().parent / "cog_marker_double.log"
+        with log_path_cog_double.open("a", encoding="utf-8") as log_file:
+            log_file.write("COG marker stiffness (double support):\n")
+            log_file.write(_format_matrix_full(cog_stiff_double))
             log_file.write("\n\n")
         if not _COG_GAIN_PRINTED:
-            print("asrRobotCalcCOGVEFromGainPybind gain matrix:\n" + _format_matrix_full(gain_np))
+            print("asrRobotCalcCOGVEFromGainPybind gain matrix:\n" + gain_str)
             _COG_GAIN_PRINTED = True
 
     pivot_id_left = robot.asrRobotLinkFindByNamePybind("left_ankle_roll_link")
@@ -202,32 +216,63 @@ def _compute_stiffness(
             with log_path_inertia.open("a", encoding="utf-8") as log_file:
                 log_file.write(_format_matrix_full(inertia))
                 log_file.write("\n\n")
-        projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
-        asr_pybindings.asrRobotCalcInertiaSinglePybind(
-            ctx.robot,
-            ctx.pivot_id_left,
-            projected_inertia,
-        )
-        if _DEBUG_PRINT and env_id == 0:
-            log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
-            with log_path_proj.open("a", encoding="utf-8") as log_file:
-                log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
-                log_file.write("\n\n")
-        ref_k = projected_inertia.clone()
-        ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
-        ref_d = projected_inertia.clone()
-        ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
-        asr_pybindings.asrRVCCalcDCCDoublePybind(
-            ctx.robot,
-            ctx.pivot_id_left,
-            ctx.pivot_id_right,
-            ctx.task_double,
-            ref_k,
-            ref_d,
-            ctx.eps,
-        )
-        stiff_native = np.asarray(ctx.robot._joint_stiff)
-        visco_native = np.asarray(ctx.robot._joint_visco)
+        projected_inertia = ref_k = ref_d = jacob_map = jacob_task = None
+        try:
+            projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
+            asr_pybindings.asrRobotCalcInertiaSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_left,
+                projected_inertia,
+            )
+            if _DEBUG_PRINT and env_id == 0:
+                log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
+                with log_path_proj.open("a", encoding="utf-8") as log_file:
+                    log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
+                    log_file.write("\n\n")
+            if joint_count > 6:
+                reduced_dof = joint_count - 6
+                jacob_map = asr_pybindings.kMat(joint_count, reduced_dof)
+                asr_pybindings.asrJacobDoubleToJointPybind(
+                    ctx.robot,
+                    ctx.pivot_id_left,
+                    ctx.pivot_id_right,
+                    jacob_map,
+                )
+                jacob_task = asr_pybindings.kMat(ctx.task_double._active_dof, reduced_dof)
+                asr_pybindings.asrJacobTaskDoublePybind(
+                    ctx.robot,
+                    ctx.pivot_id_left,
+                    ctx.pivot_id_right,
+                    jacob_map,
+                    ctx.task_double,
+                    jacob_task,
+                )
+                if _DEBUG_PRINT and env_id == 0:
+                    log_path_jac = Path(__file__).resolve().parent / "jacob_double0.log"
+                    with log_path_jac.open("a", encoding="utf-8") as log_file:
+                        log_file.write(_format_matrix_full(jacob_task.to_numpy()))
+                        log_file.write("\n\n")
+            ref_k = projected_inertia.clone()
+            ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = projected_inertia.clone()
+            ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
+            asr_pybindings.asrRVCCalcDCCDoublePybind(
+                ctx.robot,
+                ctx.pivot_id_left,
+                ctx.pivot_id_right,
+                ctx.task_double,
+                ref_k,
+                ref_d,
+            )
+            stiff_native = np.asarray(ctx.robot._joint_stiff)
+            visco_native = np.asarray(ctx.robot._joint_visco)
+        finally:
+            # Drop references so the underlying kMat allocations are freed after each step.
+            ref_k = None
+            ref_d = None
+            projected_inertia = None
+            jacob_map = None
+            jacob_task = None
     elif left and not right:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
         inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
@@ -236,31 +281,50 @@ def _compute_stiffness(
             with log_path_inertia.open("a", encoding="utf-8") as log_file:
                 log_file.write(_format_matrix_full(inertia))
                 log_file.write("\n\n")
-        projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
-        asr_pybindings.asrRobotCalcInertiaSinglePybind(
-            ctx.robot,
-            ctx.pivot_id_left,
-            projected_inertia,
-        )
-        if _DEBUG_PRINT and env_id == 0:
-            log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
-            with log_path_proj.open("a", encoding="utf-8") as log_file:
-                log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
-                log_file.write("\n\n")
-        ref_k = projected_inertia.clone()
-        ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
-        ref_d = projected_inertia.clone()
-        ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
-        asr_pybindings.asrRVCCalcDCCSinglePybind(
-            ctx.robot,
-            ctx.pivot_id_left,
-            ctx.task_single,
-            ref_k,
-            ref_d,
-            ctx.eps,
-        )
-        stiff_native = np.asarray(ctx.robot._joint_stiff)
-        visco_native = np.asarray(ctx.robot._joint_visco)
+        projected_inertia = ref_k = ref_d = jacob_task = None
+        try:
+            projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
+            asr_pybindings.asrRobotCalcInertiaSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_left,
+                projected_inertia,
+            )
+            if _DEBUG_PRINT and env_id == 0:
+                log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
+                with log_path_proj.open("a", encoding="utf-8") as log_file:
+                    log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
+                    log_file.write("\n\n")
+            if joint_count > 0 and ctx.task_single._active_dof > 0:
+                jacob_task = asr_pybindings.kMat(ctx.task_single._active_dof, joint_count)
+                asr_pybindings.asrJacobTaskSinglePybind(
+                    ctx.robot,
+                    ctx.pivot_id_left,
+                    ctx.task_single,
+                    jacob_task,
+                )
+                if _DEBUG_PRINT and env_id == 0:
+                    log_path_jac = Path(__file__).resolve().parent / "jacob_single_left0.log"
+                    with log_path_jac.open("a", encoding="utf-8") as log_file:
+                        log_file.write(_format_matrix_full(jacob_task.to_numpy()))
+                        log_file.write("\n\n")
+            ref_k = projected_inertia.clone()
+            ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = projected_inertia.clone()
+            ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
+            asr_pybindings.asrRVCCalcDCCSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_left,
+                ctx.task_single,
+                ref_k,
+                ref_d,
+            )
+            stiff_native = np.asarray(ctx.robot._joint_stiff)
+            visco_native = np.asarray(ctx.robot._joint_visco)
+        finally:
+            ref_k = None
+            ref_d = None
+            projected_inertia = None
+            jacob_task = None
     elif right and not left:
         asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
         inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
@@ -269,51 +333,74 @@ def _compute_stiffness(
             with log_path_inertia.open("a", encoding="utf-8") as log_file:
                 log_file.write(_format_matrix_full(inertia))
                 log_file.write("\n\n")
-        projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
-        asr_pybindings.asrRobotCalcInertiaSinglePybind(
-            ctx.robot,
-            ctx.pivot_id_right,
-            projected_inertia,
-        )
-        if _DEBUG_PRINT and env_id == 0:
-            log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
-            with log_path_proj.open("a", encoding="utf-8") as log_file:
-                log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
-                log_file.write("\n\n")
-        ref_k = projected_inertia.clone()
-        ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
-        ref_d = projected_inertia.clone()
-        ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
-        asr_pybindings.asrRVCCalcDCCSinglePybind(
-            ctx.robot,
-            ctx.pivot_id_right,
-            ctx.task_single,
-            ref_k,
-            ref_d,
-            ctx.eps,
-        )
-        stiff_native = np.asarray(ctx.robot._joint_stiff)
-        visco_native = np.asarray(ctx.robot._joint_visco)
-    else:
-        if _DEBUG_PRINT:
-            asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
-            inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
-            if env_id == 0:
-                log_path_inertia = Path(__file__).resolve().parent / "inertia0.log"
-                with log_path_inertia.open("a", encoding="utf-8") as log_file:
-                    log_file.write(_format_matrix_full(inertia))
-                    log_file.write("\n\n")
+        projected_inertia = ref_k = ref_d = jacob_task = None
+        try:
             projected_inertia = asr_pybindings.kMat(joint_count, joint_count)
             asr_pybindings.asrRobotCalcInertiaSinglePybind(
                 ctx.robot,
                 ctx.pivot_id_right,
                 projected_inertia,
             )
-            if env_id == 0:
+            if _DEBUG_PRINT and env_id == 0:
                 log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
                 with log_path_proj.open("a", encoding="utf-8") as log_file:
                     log_file.write(_format_matrix_full(projected_inertia.to_numpy()[ctx.perm_ix]))
                     log_file.write("\n\n")
+            if joint_count > 0 and ctx.task_single._active_dof > 0:
+                jacob_task = asr_pybindings.kMat(ctx.task_single._active_dof, joint_count)
+                asr_pybindings.asrJacobTaskSinglePybind(
+                    ctx.robot,
+                    ctx.pivot_id_right,
+                    ctx.task_single,
+                    jacob_task,
+                )
+                if _DEBUG_PRINT and env_id == 0:
+                    log_path_jac = Path(__file__).resolve().parent / "jacob_single_right0.log"
+                    with log_path_jac.open("a", encoding="utf-8") as log_file:
+                        log_file.write(_format_matrix_full(jacob_task.to_numpy()))
+                        log_file.write("\n\n")
+            ref_k = projected_inertia.clone()
+            ref_k.scale_inplace(_DOUBLE_SUPPORT_STIFF_GAIN)
+            ref_d = projected_inertia.clone()
+            ref_d.scale_inplace(_DOUBLE_SUPPORT_VISCO_GAIN)
+            asr_pybindings.asrRVCCalcDCCSinglePybind(
+                ctx.robot,
+                ctx.pivot_id_right,
+                ctx.task_single,
+                ref_k,
+                ref_d,
+            )
+            stiff_native = np.asarray(ctx.robot._joint_stiff)
+            visco_native = np.asarray(ctx.robot._joint_visco)
+        finally:
+            ref_k = None
+            ref_d = None
+            projected_inertia = None
+            jacob_task = None
+    else:
+        if _DEBUG_PRINT:
+            projected_debug = None
+            try:
+                asr_pybindings.asrRobotTaskFwdKinematicsPybind(ctx.robot, ctx.task_single)
+                inertia = asr_pybindings.asrRobotCalcInertiaPybind(ctx.robot)
+                if env_id == 0:
+                    log_path_inertia = Path(__file__).resolve().parent / "inertia0.log"
+                    with log_path_inertia.open("a", encoding="utf-8") as log_file:
+                        log_file.write(_format_matrix_full(inertia))
+                        log_file.write("\n\n")
+                projected_debug = asr_pybindings.kMat(joint_count, joint_count)
+                asr_pybindings.asrRobotCalcInertiaSinglePybind(
+                    ctx.robot,
+                    ctx.pivot_id_right,
+                    projected_debug,
+                )
+                if env_id == 0:
+                    log_path_proj = Path(__file__).resolve().parent / "proj_inertia0.log"
+                    with log_path_proj.open("a", encoding="utf-8") as log_file:
+                        log_file.write(_format_matrix_full(projected_debug.to_numpy()[ctx.perm_ix]))
+                        log_file.write("\n\n")
+            finally:
+                projected_debug = None
         stiff_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 150
         visco_native = np.eye(len(ctx.joint_names), dtype=np.float64) * 5.0
 
@@ -335,6 +422,7 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
         self._num_workers = 32
         self._chunksize = max(1, cfg_chunksize)
         self._pool: Optional[Pool] = None
+        self._elapsed_time_s = 0.0
 
         if self._num_workers > 1:
             ctx = torch_mp.get_context("fork")
@@ -366,6 +454,9 @@ class JointPositionDDCMultiAction(JointPositionDDCAction):
             super().apply_actions()
             raise RuntimeError("Failed to apply actions in single-process mode.")
             return
+
+        # sim_time = self._env.sim.current_time
+        # print(f"[JointPositionDDCMultiAction] elapsed {sim_time:.6f}s")
 
         q_des = self.processed_actions
         q = self._asset.data.joint_pos[:, self._joint_ids]
